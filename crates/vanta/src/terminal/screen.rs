@@ -114,7 +114,7 @@ impl Screen {
             }
         };
         let mut scroll = None;
-        if !full {
+        if !full && capabilities.scroll_regions {
             let previous = previous.as_ref().expect("full is false");
             if previous.top_line != next.top_line {
                 if usize::from(next.size.height) > 1 && next.top_line == previous.top_line + 1 {
@@ -520,6 +520,8 @@ mod tests {
         Capabilities {
             color,
             synchronized_output,
+            scroll_regions: true,
+            alternate_screen: true,
         }
     }
 
@@ -657,6 +659,46 @@ mod tests {
         assert!(!drawn.contains("bravo"));
         assert!(!drawn.contains("charlie"));
         assert!(drawn.contains("\x1b[1;3r\x1b[S\x1b[r"));
+        assert!(!bytes.windows(4).any(|window| window == b"\x1b[2J"));
+    }
+
+    #[test]
+    fn without_scroll_regions_a_scroll_falls_back_to_cell_damage() {
+        let size = Size {
+            width: 10,
+            height: 4,
+        };
+        let mut screen = Screen::default();
+        let caps = Capabilities {
+            scroll_regions: false,
+            ..capabilities(ColorDepth::Ansi16, false)
+        };
+        screen
+            .render(
+                &frame_at(
+                    size,
+                    0,
+                    &["alpha", "bravo", "charlie", "NORMAL"],
+                    ScreenPos { row: 0, col: 0 },
+                ),
+                caps,
+            )
+            .expect("first frame");
+
+        let bytes = screen
+            .render(
+                &frame_at(
+                    size,
+                    1,
+                    &["bravo", "charlie", "delta", "NORMAL"],
+                    ScreenPos { row: 2, col: 0 },
+                ),
+                caps,
+            )
+            .expect("degraded scroll frame");
+        let drawn = text(&bytes);
+        assert!(drawn.contains("delta"));
+        assert!(!drawn.contains("\x1b[1;3r"));
         assert!(!bytes.windows(4).any(|window| window == b"\x1b[2J"));
     }
 

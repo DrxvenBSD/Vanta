@@ -116,7 +116,8 @@ All notable changes to Vanta are recorded here. The format follows
   the initial swap until the first unsaved change, and use a 1 MiB/10-second
   swap bound. The generated 20 MiB tests cover UTF-8, UTF-16LE, lossless latin-1
   and byte-exact unchanged saves; a just-below-threshold file stays in normal
-  mode. The 1 GiB acceptance fixture and PERF-006 numbers remain open.
+  mode. The ignored G1 harness now generates a 1 GiB fixture at run time and
+  measures first-frame latency, 1,000 edits, scrolling and RSS.
 - Cell-accurate terminal rendering (`TERM-004`): the backend retains a grid
   of character-and-style cells and rewrites only changed cells, coalesced into
   horizontal runs. An unchanged frame writes no bytes; a cursor-only move
@@ -130,11 +131,19 @@ All notable changes to Vanta are recorded here. The format follows
   scroll-region sequence and no full clear, proven by a unit test. ConPTY
   re-renders the 23-row text area, so the PTY ceiling is a host-behavior
   regression guard, not a cell-minimal byte count.
-- Capability fallbacks: `NO_COLOR` and `TERM=dumb` disable foreground color;
-  `COLORTERM`, `TERM` and known terminal identifiers select truecolor, 256 or
-  16 colors; synchronized output is bracketed for known terminals and can be
-  forced or disabled with `VANTA_SYNCHRONIZED_OUTPUT`. Detection is
-  environment-based and adds no startup query delay.
+- Active capability detection: at startup the terminal boundary queries TTY
+  attachment, ANSI support and the advertised color count through crossterm.
+  `NO_COLOR`/`TERM=dumb` still disable color; environment hints refine
+  truecolor and synchronized output. Color depth, scroll regions, alternate
+  screen and synchronized output fall back independently when absent, and the
+  probe is nonblocking so it adds no first-frame wait. Unit tests cover full,
+  256/16-color, no-TTY/no-ANSI and synchronized-override profiles.
+- G1 large-file performance harness: `cargo xtask perf` builds the release
+  binary, generates a 1 GiB fixture, drives the real binary in an 80x24 ConPTY,
+  performs 1,000 edits, scrolls one line, samples RSS and removes the fixture.
+  Windows 11 Pro 26200 / Ryzen 5 5600X measured 1,894.870 ms to first frame
+  (8 s budget), 1,250,660,352 bytes RSS (1.165x, 2.5x budget), 705.801 ms for
+  1,000 edits and 1,871 bytes for one scroll frame.
 - Headless editor-loop tests and PTY tests that run the real binary, verify
   alternate-screen restoration on exit and on panic, exercise undo/redo,
   range operators, Visual selections, literal search, CRLF and grapheme edge
@@ -194,12 +203,12 @@ All notable changes to Vanta are recorded here. The format follows
   symlinks. Swap recovery covers the open buffer rather than a multi-buffer
   swap set, and the `directory` option is absent.
 - Large-file mode starts at 20 MiB with streamed opening. Saving still
-  materializes the encoded output, and the 1 GiB fixture plus PERF-006 evidence
-  are not recorded yet.
+  materializes the encoded output. The 1 GiB PERF-006/PERF-007 evidence is
+  reproducible with `cargo xtask perf`.
 - Rendering now diffs individual cells and optimizes one-line vertical scrolls.
-  Active terminal probes, terminfo color negotiation and a synchronized-output
-  tearing test remain open; the capability detector uses environment signals
-  only. Real-binary scroll frames on Windows ConPTY are capped at 2,048 bytes
+  Active terminal probes cover TTY, ANSI and advertised color count; XTGETTCAP,
+  terminfo color negotiation and a synchronized-output tearing test remain
+  open. Real-binary scroll frames on Windows ConPTY are capped at 2,048 bytes
   (1,871 measured) because ConPTY repaints the text area; the direct backend
   output is smaller and covered by `Screen` unit tests.
 - The workspace version is `0.1.0` and this is a preview. A `1.0` release waits

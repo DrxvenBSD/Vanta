@@ -15,6 +15,7 @@ Usage: cargo xtask <command>
 Commands:
   check   Format check, Clippy with warnings denied, and the workspace tests
   test    Run the workspace test suite
+  perf    Generate a 1 GiB fixture and measure the G1 large-file budgets
   fmt     Format the workspace
   help    Show this message
 ";
@@ -33,6 +34,7 @@ fn main() -> ExitCode {
     match command.as_str() {
         "check" => run_check(),
         "test" => finish(run(&["test", "--workspace"])),
+        "perf" => run_perf(),
         "fmt" => finish(run(&["fmt", "--all"])),
         "help" | "-h" | "--help" => {
             print!("{HELP}");
@@ -67,6 +69,28 @@ fn run_check() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// Builds the release binary, then runs the ignored 1 GiB G1 harness.
+///
+/// The harness generates its fixture at run time. It is deliberately outside
+/// `check`: a 1 GiB write, open and edit run is release evidence, not a fast
+/// edit loop check.
+fn run_perf() -> ExitCode {
+    if let Err(code) = run(&["build", "--release", "-p", "vanta"]) {
+        return code;
+    }
+    finish(run(&[
+        "test",
+        "--release",
+        "-p",
+        "vanta",
+        "--test",
+        "perf_g1",
+        "--",
+        "--ignored",
+        "--nocapture",
+    ]))
 }
 
 /// Runs one Cargo command in the workspace root.

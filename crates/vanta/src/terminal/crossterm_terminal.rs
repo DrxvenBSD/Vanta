@@ -52,7 +52,11 @@ impl CrosstermTerminal {
         self.capabilities = Capabilities::detect();
         self.screen.reset();
         terminal::enable_raw_mode()?;
-        let switched = execute!(io::stdout(), EnterAlternateScreen, Show);
+        let switched = if self.capabilities.alternate_screen {
+            execute!(io::stdout(), EnterAlternateScreen, Show)
+        } else {
+            execute!(io::stdout(), Show)
+        };
         if let Err(error) = switched {
             // The alternate screen may have been entered before a later
             // command failed. Best effort: restore both the screen and raw
@@ -74,7 +78,11 @@ impl CrosstermTerminal {
             return Ok(());
         }
         let raw = terminal::disable_raw_mode();
-        let screen = execute!(io::stdout(), Show, LeaveAlternateScreen);
+        let screen = if self.capabilities.alternate_screen {
+            execute!(io::stdout(), Show, LeaveAlternateScreen)
+        } else {
+            execute!(io::stdout(), Show)
+        };
         self.entered = false;
         self.screen.reset();
         raw.and(screen)
