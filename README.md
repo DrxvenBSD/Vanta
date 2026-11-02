@@ -28,6 +28,9 @@ Git integration and plugins are still in progress. A release will carry the
 - Vim-compatible backups: `backup`, `writebackup`, `backupdir` and `backupext`.
 - Crash recovery for named and untitled buffers, with `vanta -r` and
   `:recover`/`:recover!`.
+- Encoding detection and preservation: UTF-8 with or without a BOM, UTF-16LE/BE
+  and UTF-32LE/BE with a BOM, and a lossless latin-1 fallback. `:set fileencoding`
+  selects the next write's encoding; `:set bomb` controls the UTF-8 BOM.
 - A panic-safe terminal session: raw mode, the alternate screen and the cursor
   are restored on normal exit, early errors and panic.
 - Windows 11 is the verified platform. Linux and macOS CI is configured in
@@ -111,6 +114,8 @@ Exit codes: `0` success, `1` startup/runtime error, `2` invalid arguments.
 | `:preserve` | Force a swap flush |
 | `:set backup` / `:set writebackup` | Keep a permanent/transient backup on save |
 | `:set backupdir=...`, `:set backupext=...` | Configure backup location and suffix |
+| `:set fileencoding=<enc>` | Set the next write's encoding (`utf-8`, `utf-16le`, ...) |
+| `:set bomb` / `:set nobomb` | Add or remove the UTF-8 BOM on write |
 
 Quoted paths and paths containing spaces are accepted.
 
@@ -148,7 +153,7 @@ cargo test --workspace
 cargo build --release -p vanta
 ```
 
-The suite currently contains 163 tests, including headless editor-loop tests
+The suite currently contains 179 tests, including headless editor-loop tests
 and PTY tests that run the real binary: save, undo/redo, Visual selections,
 search, horizontal scrolling, kill-and-recover, and terminal restoration on
 panic. `cargo xtask check` is the same gate CI runs.
@@ -174,7 +179,9 @@ This is a 0.1 preview, not a daily-driver Vim replacement.
   Replace/Select/Visual Block modes, marks, jumplist or quickfix.
 - Undo is linear; there is no undo tree, persistent undo or `:earlier`/`:later`.
 - Search is literal: no regex, `?`, offsets, `:s`, `:g` or search history.
-- UTF-8 only; other encodings are rejected rather than converted.
+- Encoding detection is fixed to BOM-first UTF-8/UTF-16/UTF-32 and a latin-1
+  fallback; `fileencodings` is not configurable. Malformed BOM data opens as
+  lossless latin-1 rather than a read-only binary buffer.
 - No configuration file, Lua API, plugins, syntax highlighting, LSP, Git,
   picker, completion, embedded terminal or jobs.
 - No mouse, bracketed paste, clipboard integration or line-number gutter.
@@ -190,7 +197,7 @@ are ordered by dependency and cannot be waived because code exists.
 
 | Milestone | Outcome | State |
 |---|---|---|
-| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups and swap recovery exist; encoding, large-file mode, damage renderer and capability probe do not. |
+| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups, swap recovery and encoding detection/conversion exist; large-file mode, damage renderer and capability probe do not. |
 | 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Early slice: basic modes and linear undo only. |
 | 3 | Search, typed Lua configuration, tree-sitter syntax | Not started. |
 | 4 | Modules, LSP, Git, picker, terminal and plugin runtime | Not started. |

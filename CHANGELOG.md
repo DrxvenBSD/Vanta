@@ -104,6 +104,13 @@ All notable changes to Vanta are recorded here. The format follows
 - Release and install path: `cargo build --release -p vanta` produces
   `target/release/vanta.exe`, and `cargo install --path crates/vanta --locked`
   installs `vanta` in the user cargo bin already on `PATH`.
+- BOM-first file encoding detection and conversion (`BUF-007`): UTF-8 with or
+  without a BOM, UTF-16LE/BE and UTF-32LE/BE with a BOM round-trip, and invalid
+  UTF-8 falls back to a byte-preserving latin-1 read with a warning.
+  `:set fileencoding=<encoding>` selects the write encoding and fails with `E513`
+  plus the offending byte offset when latin-1 cannot represent a character;
+  `:set bomb`/`:set nobomb` controls a UTF-8 BOM. Malformed BOM data also falls
+  back losslessly instead of being partially decoded.
 - Headless editor-loop tests and PTY tests that run the real binary, verify
   alternate-screen restoration on exit and on panic, exercise undo/redo,
   range operators, Visual selections, literal search, CRLF and grapheme edge
@@ -152,8 +159,10 @@ All notable changes to Vanta are recorded here. The format follows
   regex, `?`, `:s`, search offsets or incremental matching while typing.
   `n`/`N` repeat both directions and wrap. The editor is single-buffer and
   single-window: there are no splits, tabs, buffer commands, marks, jumplist
-  or quickfix. Files are UTF-8 only. There is no configuration file, Lua
-  runtime, syntax highlighting, LSP, Git integration, picker, completion,
+  or quickfix. Encoding detection is BOM-first UTF-8/UTF-16/UTF-32 with a
+  latin-1 fallback; `fileencodings` is not configurable. There is no
+  configuration file, Lua runtime, syntax highlighting, LSP, Git integration,
+  picker, completion,
   embedded terminal or job runner. Atomic save does not yet write through
   symlinks. Swap recovery covers the open buffer rather than a multi-buffer
   swap set, and the `directory` option is absent.

@@ -18,7 +18,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use vanta_fs::{BackupOptions, SaveOutcome};
+use vanta_fs::{BackupOptions, SaveOutcome, TextEncoding, decode_file, encode_text};
 use vanta_text::{
     Buffer, ByteCol, BytePos, LineCol, LineEnding, LineNumber, TextEdit, TextError,
     display_col_of_byte, next_grapheme_boundary, prev_grapheme_boundary,
@@ -124,6 +124,9 @@ pub(crate) enum DocumentSaveError {
     /// The atomic filesystem save failed.
     #[error("{0}")]
     Save(#[from] vanta_fs::SaveError),
+    /// The buffer cannot be represented in the document's file encoding.
+    #[error("{0}")]
+    Encode(#[from] vanta_fs::EncodeError),
 }
 
 /// One buffer, its optional path, its cursor and its swap-file lifecycle.
@@ -153,22 +156,34 @@ pub(crate) struct Document {
     swap_flush_deadline: Option<Instant>,
     /// Vim-compatible backup options for this document's save transaction.
     backup_options: BackupOptions,
+    /// The encoding used when writing this document.
+    encoding: TextEncoding,
+    /// Whether a UTF-8 BOM is written with the buffer.
+    bom: bool,
+    /// A non-fatal notice from encoding detection at open time.
+    encoding_warning: Option<String>,
 }
 
 impl Document {
     /// Opens `path`, or starts an empty document when it does not exist.
     ///
-    /// Files must be valid UTF-8; other files are rejected rather than
-    /// silently converted.
+    /// Files are decoded with BOM-first encoding detection. Valid UTF-8 is
+    /// read as UTF-8; UTF-16/32 with a BOM and latin-1 are converted to the
+    /// editor's internal UTF-8. Malformed BOM-prefixed data falls back to
+    /// latin-1 with a warning, preserving every byte for the next write.
     pub(crate) fn open(path: impl Into<PathBuf>) -> Result<Self, EditorError> {
         let path = path.into();
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
             Err(source) => return Err(EditorError::Read { path, source }),
         };
+        let decoded = decode_file(&bytes);
 
-        let mut document = Self::from_parts(Some(path), &text);
+        let mut document = Self::from_parts(Some(path), &decoded.text);
+        document.encoding = decoded.encoding;
+        document.bom = decoded.bom;
+        document.encoding_warning = decoded.warning;
         document.begin_swap();
         Ok(document)
     }
@@ -193,6 +208,9 @@ impl Document {
             recovery: None,
             swap_flush_deadline: None,
             backup_options: BackupOptions::default(),
+            encoding: TextEncoding::Utf8,
+            bom: false,
+            encoding_warning: None,
         }
     }
 
@@ -247,6 +265,31 @@ impl Document {
         &mut self.backup_options
     }
 
+    /// Returns the encoding used for the next write.
+    pub(crate) fn encoding(&self) -> TextEncoding {
+        self.encoding
+    }
+
+    /// Returns whether the next UTF-8 write includes a BOM.
+    pub(crate) fn bomb(&self) -> bool {
+        self.bom
+    }
+
+    /// Returns the non-fatal encoding notice from the last open.
+    pub(crate) fn encoding_warning(&self) -> Option<&str> {
+        self.encoding_warning.as_deref()
+    }
+
+    /// Selects the encoding used for subsequent writes.
+    pub(crate) fn set_encoding(&mut self, encoding: TextEncoding) {
+        self.encoding = encoding;
+    }
+
+    /// Selects whether subsequent UTF-8 writes include a BOM.
+    pub(crate) fn set_bomb(&mut self, bomb: bool) {
+        self.bom = bomb;
+    }
+
     /// Forces a swap flush for `:preserve`.
     ///
     /// Returns `false` when this session does not own a swap: a pending
@@ -276,6 +319,7 @@ impl Document {
     /// left to recover. The next mutation starts a fresh swap.
     pub(crate) fn mark_saved(&mut self) {
         self.buffer.mark_saved();
+        self.encoding_warning = None;
         if self.swap_owned {
             self.remove_swap();
         }
@@ -682,7 +726,8 @@ impl Document {
 
     fn write_to(&self, path: &Path) -> Result<SaveOutcome, DocumentSaveError> {
         let text = self.buffer.to_string();
-        vanta_fs::save_with_backup(path, text.as_bytes(), &self.backup_options)
+        let contents = encode_text(&text, self.encoding, self.bom)?;
+        vanta_fs::save_with_backup(path, &contents, &self.backup_options)
             .map_err(DocumentSaveError::from)
     }
 

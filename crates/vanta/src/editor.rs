@@ -18,7 +18,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use vanta_fs::SaveOutcome;
+use vanta_fs::{SaveOutcome, TextEncoding};
 use vanta_text::{
     ByteCol, BytePos, LineCol, LineEnding, LineNumber, TextError, prev_grapheme_boundary,
 };
@@ -129,11 +129,12 @@ impl Editor {
     /// Opens `path` into a document, or starts an empty buffer when it does
     /// not exist.
     ///
-    /// Files must be valid UTF-8; other files are rejected rather than
-    /// silently converted.
+    /// Files are decoded with BOM-first encoding detection. UTF-16/32 with a
+    /// BOM and latin-1 are converted to internal UTF-8; malformed data falls
+    /// back to a lossless latin-1 read with a warning.
     pub fn open(path: impl Into<PathBuf>) -> Result<Self, EditorError> {
         let document = Document::open(path)?;
-        let warning = document.swap_warning().map(ToString::to_string);
+        let warning = document_warning(&document);
         let mut editor = Self::with_document(document);
         editor.message = warning;
         Ok(editor)
@@ -782,16 +783,17 @@ impl Editor {
         }
     }
 
-    /// Applies the backup options exposed by this minimal editor.
+    /// Applies the backup and encoding options exposed by this minimal editor.
     ///
     /// This is deliberately not a general `:set` implementation. It covers
-    /// the four BUF-005 options, supports the Vim boolean negations, and
-    /// accepts a comma-separated `backupdir` list.
+    /// the BUF-005 backup options and the BUF-007 `fileencoding`/`bomb`
+    /// options, supports the Vim boolean negations, and accepts a
+    /// comma-separated `backupdir` list.
     fn execute_set(&mut self, argument: &str) {
         if argument.is_empty() {
             let options = self.document.backup_options();
             self.message = Some(format!(
-                "backup={} writebackup={} backupdir={} backupext={}",
+                "backup={} writebackup={} backupdir={} backupext={} fileencoding={} bomb={}",
                 boolean_name(options.backup, "backup"),
                 boolean_name(options.write_backup, "writebackup"),
                 options
@@ -801,6 +803,8 @@ impl Editor {
                     .collect::<Vec<_>>()
                     .join(","),
                 options.extension,
+                self.document.encoding(),
+                boolean_name(self.document.bomb(), "bomb"),
             ));
             return;
         }
@@ -822,6 +826,10 @@ impl Editor {
                             .join(",")
                     ),
                     "backupext" => format!("backupext={}", options.extension),
+                    "fileencoding" => {
+                        format!("fileencoding={}", self.document.encoding())
+                    }
+                    "bomb" => boolean_name(self.document.bomb(), "bomb"),
                     _ => format!("E518: Unknown option: {query}"),
                 });
                 return;
@@ -832,6 +840,8 @@ impl Editor {
                 "nobackup" => self.document.backup_options_mut().backup = false,
                 "writebackup" => self.document.backup_options_mut().write_backup = true,
                 "nowritebackup" => self.document.backup_options_mut().write_backup = false,
+                "bomb" => self.document.set_bomb(true),
+                "nobomb" => self.document.set_bomb(false),
                 _ => {
                     if let Some(value) = token.strip_prefix("backupdir=") {
                         let directories = value
@@ -847,6 +857,14 @@ impl Editor {
                             return;
                         }
                         self.document.backup_options_mut().extension = value.to_string();
+                    } else if let Some(value) = token.strip_prefix("fileencoding=") {
+                        match TextEncoding::parse(value) {
+                            Some(encoding) => self.document.set_encoding(encoding),
+                            None => {
+                                self.message = Some(format!("E474: Invalid argument: {token}"));
+                                return;
+                            }
+                        }
                     } else {
                         self.message = Some(format!("E518: Unknown option: {token}"));
                         return;
@@ -867,7 +885,7 @@ impl Editor {
             Ok(mut document) => {
                 *document.backup_options_mut() = backup_options;
                 self.document.close_session();
-                let warning = document.swap_warning().map(ToString::to_string);
+                let warning = document_warning(&document);
                 self.document = document;
                 self.reset_view_state();
                 self.message = warning;
@@ -974,6 +992,10 @@ impl Editor {
                 self.message = Some("E32: No file name".to_string());
                 false
             }
+            Err(DocumentSaveError::Encode(error)) => {
+                self.message = Some(error.to_string());
+                false
+            }
             Err(error) => {
                 self.message = Some(format!("save failed: {error}"));
                 false
@@ -988,6 +1010,10 @@ impl Editor {
                 self.document.mark_saved();
                 self.report_save_outcome(&outcome);
                 true
+            }
+            Err(DocumentSaveError::Encode(error)) => {
+                self.message = Some(error.to_string());
+                false
             }
             Err(error) => {
                 self.message = Some(format!("save failed: {error}"));
@@ -1101,6 +1127,22 @@ fn boolean_name(value: bool, name: &str) -> String {
         name.to_string()
     } else {
         format!("no{name}")
+    }
+}
+
+/// Combines the non-fatal notices produced while opening a document.
+fn document_warning(document: &Document) -> Option<String> {
+    let mut warnings = Vec::new();
+    if let Some(warning) = document.encoding_warning() {
+        warnings.push(warning.to_string());
+    }
+    if let Some(warning) = document.swap_warning() {
+        warnings.push(warning.to_string());
+    }
+    if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join(" | "))
     }
 }
 
