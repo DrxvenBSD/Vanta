@@ -1,0 +1,7 @@
+[toolchain]
+# PROJECT_SPEC §2.7 names stable 1.99.1; only 1.94.0 is available in this
+# environment, so the workspace pins the installed compiler and keeps the
+# declared MSRV (1.90) as the floor. Raise both together.
+channel = "1.94.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

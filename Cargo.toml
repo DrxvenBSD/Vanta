@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/vanta", "crates/vanta-fs", "crates/vanta-text", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vanta-editor/vanta"
+homepage = "https://github.com/vanta-editor/vanta"
+
+[workspace.dependencies]
+crossterm = "0.29"
+ropey = "1.6"
+thiserror = "2.0"
+unicode-segmentation = "1.12"
+unicode-width = "0.2"
+vanta-fs = { path = "crates/vanta-fs" }
+vanta-text = { path = "crates/vanta-text" }
+
+portable-pty = "0.9"
+proptest = "1.6"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "deny"
+missing_docs = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+# Dependencies are compiled with optimization in debug builds so that the
+# rope and Unicode libraries do not dominate development-time latency.
+[profile.dev.package."*"]
+opt-level = 1

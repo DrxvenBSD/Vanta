@@ -1,0 +1,21 @@
+[package]
+name = "vanta"
+description = "Vanta: a fast modal terminal editor with crash recovery and atomic saves"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+thiserror.workspace = true
+unicode-segmentation.workspace = true
+vanta-fs.workspace = true
+vanta-text.workspace = true
+
+[dev-dependencies]
+portable-pty.workspace = true
+
+[lints]
+workspace = true

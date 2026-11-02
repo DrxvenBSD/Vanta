@@ -1,0 +1,19 @@
+/target
+**/*.rs.bk
+*.swp
+*.swo
+.DS_Store
+
+# Vanta runtime state
+.untitled-*.swp
+*.vanta-*.swp
+
+# Local tooling and environment
+.freebuff/
+.cloud-attachments/
+.vscode/
+.idea/
+Thumbs.db
+.env
+.env.*
+!.env.example
