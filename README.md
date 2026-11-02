@@ -126,9 +126,10 @@ Quoted paths and paths containing spaces are accepted.
   buffer.
 - A recovered buffer is marked modified. Plain `:q` refuses; only an explicit
   `:w` (or `:w <path>` for an untitled buffer) writes it.
-- On the next launch a retained swap shows `E325: ATTENTION`: `R` recovers,
-  `O` opens the original and keeps the swap, `E` edits anyway, `D` deletes it,
-  `Q`/`A`/`Esc` abort.
+- Opening a named file with a retained swap shows `E325: ATTENTION`: `R`
+  recovers, `O` opens the original and keeps the swap, `E` edits anyway, `D`
+  deletes it, `Q`/`A`/`Esc` abort. An untitled swap is recovered explicitly
+  with `vanta -r`; a plain `vanta` starts with an empty buffer.
 
 State locations, overridable with `VANTA_STATE_DIR`:
 
