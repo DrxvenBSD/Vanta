@@ -117,6 +117,16 @@ All notable changes to Vanta are recorded here. The format follows
   swap bound. The generated 20 MiB tests cover UTF-8, UTF-16LE, lossless latin-1
   and byte-exact unchanged saves; a just-below-threshold file stays in normal
   mode. The 1 GiB acceptance fixture and PERF-006 numbers remain open.
+- Damage-aware terminal rendering (`TERM-004`): the backend retains a
+  front buffer and rewrites only rows whose text or overlays changed. An
+  unchanged frame writes no bytes; a cursor-only move never clears the screen
+  or repaints buffer rows. `Frame` now carries the size used to compose it, so
+  a resize invalidates all rows. This is row-granular damage, not a cell grid.
+- Capability fallbacks: `NO_COLOR` and `TERM=dumb` disable foreground color;
+  `COLORTERM`, `TERM` and known terminal identifiers select truecolor, 256 or
+  16 colors; synchronized output is bracketed for known terminals and can be
+  forced or disabled with `VANTA_SYNCHRONIZED_OUTPUT`. Detection is
+  environment-based and adds no startup query delay.
 - Headless editor-loop tests and PTY tests that run the real binary, verify
   alternate-screen restoration on exit and on panic, exercise undo/redo,
   range operators, Visual selections, literal search, CRLF and grapheme edge
@@ -178,5 +188,8 @@ All notable changes to Vanta are recorded here. The format follows
 - Large-file mode starts at 20 MiB with streamed opening. Saving still
   materializes the encoded output, and the 1 GiB fixture plus PERF-006 evidence
   are not recorded yet.
+- Rendering damage is row-granular. Cell-level diffing, active terminal probes
+  and terminfo color negotiation remain open; the capability detector currently
+  uses environment signals only.
 - The workspace version is `0.1.0` and this is a preview. A `1.0` release waits
   for the P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.

@@ -5,30 +5,42 @@
 //! back, and [`install_panic_hook`] restores the terminal before a panic is
 //! reported. Restoring is idempotent so the normal path, the `Drop` guard and
 //! the panic hook can all call it.
+//!
+//! Frame painting lives in [`super::Screen`]; this file only owns platform
+//! state, capability detection and event translation.
 
 use std::io::{self, Write};
 use std::time::Duration;
 
-use crossterm::cursor::{MoveTo, Show};
+use crossterm::cursor::Show;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
-use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, queue};
-use unicode_segmentation::UnicodeSegmentation;
-use vanta_text::grapheme_display_width;
+use crossterm::execute;
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 
-use super::{Frame, InputEvent, SelectionSpan, Size, StyledSpan, Terminal, TextStyle};
+use super::{Capabilities, Frame, InputEvent, Screen, Size, Terminal};
 
 /// A terminal driven by crossterm on the process's standard output.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CrosstermTerminal {
     entered: bool,
+    screen: Screen,
+    capabilities: Capabilities,
+}
+
+impl Default for CrosstermTerminal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CrosstermTerminal {
     /// Creates a terminal that is not yet in editor mode.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            entered: false,
+            screen: Screen::default(),
+            capabilities: Capabilities::detect(),
+        }
     }
 
     /// Enters raw mode and the alternate screen.
@@ -37,6 +49,8 @@ impl CrosstermTerminal {
     /// disabled again before the error is returned. The caller must call
     /// [`CrosstermTerminal::restore`] on the normal exit path.
     pub fn enter(&mut self) -> io::Result<()> {
+        self.capabilities = Capabilities::detect();
+        self.screen.reset();
         terminal::enable_raw_mode()?;
         let switched = execute!(io::stdout(), EnterAlternateScreen, Show);
         if let Err(error) = switched {
@@ -62,6 +76,7 @@ impl CrosstermTerminal {
         let raw = terminal::disable_raw_mode();
         let screen = execute!(io::stdout(), Show, LeaveAlternateScreen);
         self.entered = false;
+        self.screen.reset();
         raw.and(screen)
     }
 }
@@ -81,32 +96,12 @@ impl Terminal for CrosstermTerminal {
     }
 
     fn draw(&mut self, frame: &Frame) -> io::Result<()> {
+        let bytes = self.screen.render(frame, self.capabilities)?;
+        if bytes.is_empty() {
+            return Ok(());
+        }
         let mut stdout = io::stdout().lock();
-        queue!(stdout, MoveTo(0, 0), Clear(ClearType::All))?;
-        for (row, text) in frame.rows.iter().enumerate() {
-            queue!(stdout, MoveTo(0, row as u16), Print(text))?;
-        }
-        for span in &frame.styles {
-            if let Some(row) = frame.rows.get(usize::from(span.row)) {
-                queue_style(&mut stdout, row, *span)?;
-            }
-        }
-        for span in &frame.search_matches {
-            if let Some(row) = frame.rows.get(usize::from(span.row)) {
-                queue_span(&mut stdout, row, *span, Attribute::Underlined)?;
-            }
-        }
-        for span in &frame.search_current {
-            if let Some(row) = frame.rows.get(usize::from(span.row)) {
-                queue_span(&mut stdout, row, *span, Attribute::Reverse)?;
-            }
-        }
-        for span in &frame.selection {
-            if let Some(row) = frame.rows.get(usize::from(span.row)) {
-                queue_span(&mut stdout, row, *span, Attribute::Reverse)?;
-            }
-        }
-        queue!(stdout, MoveTo(frame.cursor.col, frame.cursor.row), Show)?;
+        stdout.write_all(&bytes)?;
         stdout.flush()
     }
 
@@ -166,95 +161,6 @@ fn translate_key(key: KeyEvent) -> Option<InputEvent> {
         KeyCode::Down => Some(InputEvent::Down),
         _ => None,
     }
-}
-
-/// Draws one semantic color run over an already-rendered row.
-fn queue_style<W: Write>(stdout: &mut W, row: &str, span: StyledSpan) -> io::Result<()> {
-    let text = selected_text(
-        row,
-        SelectionSpan {
-            row: span.row,
-            start_col: span.start_col,
-            end_col: span.end_col,
-        },
-    );
-    if text.is_empty() {
-        return Ok(());
-    }
-
-    let (color, bold) = match span.style {
-        TextStyle::Title => (Color::Blue, true),
-        TextStyle::Muted => (Color::Grey, false),
-        TextStyle::Icon => (Color::Cyan, false),
-        TextStyle::Key => (Color::Blue, false),
-        TextStyle::Warm => (Color::Yellow, false),
-    };
-    queue!(
-        stdout,
-        MoveTo(span.start_col, span.row),
-        SetForegroundColor(color)
-    )?;
-    if bold {
-        queue!(stdout, SetAttribute(Attribute::Bold))?;
-    }
-    queue!(
-        stdout,
-        Print(text),
-        SetAttribute(Attribute::Reset),
-        ResetColor
-    )
-}
-
-/// Draws one highlighted span over an already-rendered row.
-fn queue_span<W: Write>(
-    stdout: &mut W,
-    row: &str,
-    span: SelectionSpan,
-    attribute: Attribute,
-) -> io::Result<()> {
-    let text = selected_text(row, span);
-    if text.is_empty() {
-        return Ok(());
-    }
-    queue!(
-        stdout,
-        MoveTo(span.start_col, span.row),
-        SetAttribute(attribute),
-        Print(text),
-        SetAttribute(Attribute::Reset),
-    )
-}
-
-/// Returns the cells covered by `span` as text that can be drawn over an
-/// already-rendered row.
-///
-/// `row` is sanitized and tab-expanded, so display cells and grapheme widths
-/// line up. A wide grapheme is included whole when any of its cells intersect
-/// the span; the renderer builds spans on grapheme boundaries, so this is
-/// normally an exact cell slice.
-fn selected_text(row: &str, span: SelectionSpan) -> String {
-    let start = usize::from(span.start_col);
-    let end = usize::from(span.end_col);
-    let mut output = String::new();
-    let mut column = 0usize;
-
-    for grapheme in row.graphemes(true) {
-        if column >= end {
-            break;
-        }
-        let width = grapheme_display_width(grapheme).max(1);
-        if column + width > start {
-            output.push_str(grapheme);
-        }
-        column += width;
-    }
-    if output.is_empty() && end > start {
-        // A selected empty line or a selected line terminator has no text
-        // cells to copy; draw reverse spaces so the selection is still
-        // visible.
-        output.push_str(&" ".repeat(end - start));
-    }
-    output
 }
 
 /// Installs a panic hook that restores the terminal before the panic is

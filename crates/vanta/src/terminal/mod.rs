@@ -7,9 +7,13 @@
 use std::io;
 use std::time::Duration;
 
+mod capabilities;
 pub mod crossterm_terminal;
+mod screen;
 
+pub(crate) use capabilities::Capabilities;
 pub use crossterm_terminal::{CrosstermTerminal, install_panic_hook};
+pub(crate) use screen::Screen;
 
 /// Terminal dimensions in display cells.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +92,11 @@ pub struct StyledSpan {
 /// terminal width, so a terminal implementation only has to place them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frame {
+    /// The terminal size this frame was composed for.
+    ///
+    /// The crossterm backend compares this value with the previous frame and
+    /// invalidates its front buffer on a resize.
+    pub size: Size,
     /// The complete screen, top row first.
     pub rows: Vec<String>,
     /// The first buffer display column shown on every text row.

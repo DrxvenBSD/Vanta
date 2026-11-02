@@ -93,6 +93,7 @@ impl Editor {
         };
 
         Frame {
+            size,
             rows,
             horizontal_offset: left,
             cursor: ScreenPos {
@@ -393,6 +394,7 @@ impl Editor {
         };
 
         Frame {
+            size,
             rows,
             horizontal_offset: 0,
             cursor: ScreenPos { row: 0, col: 0 },

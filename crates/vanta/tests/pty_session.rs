@@ -565,7 +565,8 @@ fn real_binary_searches_and_moves_the_cursor() {
     );
     assert!(
         session.contains_from(b"\x1b[7mbeta", before_search)
-            || session.contains_from(b"\x1b[7m\r\nbeta", before_search),
+            || session.contains_from(b"\x1b[7m\r\nbeta", before_search)
+            || session.contains_from(b"\x1b[7m\x1b[2;1Hbeta", before_search),
         "the current search match was not drawn in reverse video; output: {:?}",
         session.snapshot()
     );
@@ -1004,4 +1005,54 @@ fn real_binary_kill_recovers_an_untitled_buffer_to_an_explicit_path() {
     );
 
     fs::remove_dir_all(directory).expect("clean scratch directory");
+}
+
+#[test]
+fn real_binary_cursor_only_frame_does_not_repaint_buffer_rows() {
+    let directory = scratch("damage");
+    let path = directory.join("note.txt");
+    fs::write(&path, "alpha\nbeta\ngamma\n").expect("seed file");
+
+    let mut session = Session::spawn(&path, None);
+    assert!(
+        session.wait_for(b"NORMAL  1:1  note.txt", Duration::from_secs(10)),
+        "the initial frame was not drawn; output: {:?}",
+        session.snapshot()
+    );
+
+    let before = session.mark();
+    session.write(b"l");
+    assert!(
+        session.wait_for_from(b"NORMAL  1:2  note.txt", before, Duration::from_secs(10)),
+        "the cursor-only move was not drawn; output: {:?}",
+        session.snapshot()
+    );
+    assert!(
+        !session.contains_from(b"alpha", before),
+        "a cursor-only move repainted the first buffer row; output: {:?}",
+        session.snapshot()
+    );
+    assert!(
+        !session.contains_from(b"beta", before),
+        "a cursor-only move repainted the second buffer row; output: {:?}",
+        session.snapshot()
+    );
+    assert!(
+        !session.contains_from(b"\x1b[2J", before),
+        "a cursor-only move cleared the whole screen; output: {:?}",
+        session.snapshot()
+    );
+
+    session.write(b":q\r");
+    assert!(
+        session.wait_for_exit(Duration::from_secs(10)),
+        "vanta did not exit after a clean :q"
+    );
+    let output = session.finish();
+    assert!(
+        output.contains(LEAVE_ALTERNATE_SCREEN),
+        "the alternate screen was not restored: {output:?}"
+    );
+
+    fs::remove_dir_all(&directory).expect("clean scratch directory");
 }
