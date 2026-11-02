@@ -34,9 +34,11 @@ Git integration and plugins are still in progress. A release will carry the
 - Large-file mode at 20 MiB: chunked decoding into the rope, a `[LARGE]` status
   marker, lazy initial swaps and a wider 1 MiB/10-second swap bound. Opening is
   streamed; saving still materializes the encoded output.
-- Damage-aware terminal rendering: unchanged frames write nothing, a cursor-only
-  move does not clear or repaint the buffer rows, and only changed rows are
-  rewritten. Capability fallbacks cover `NO_COLOR`, 16/256/truecolor and
+- Cell-accurate terminal rendering: a retained grid stores text and style per
+  cell and writes only changed cell runs. Unchanged frames write nothing and a
+  cursor-only move emits no buffer cells. A one-line scroll uses a text-area
+  scroll region and repaints only the newly exposed row plus changed status
+  cells. Capability fallbacks cover `NO_COLOR`, 16/256/truecolor and
   synchronized output.
 - A panic-safe terminal session: raw mode, the alternate screen and the cursor
   are restored on normal exit, early errors and panic.
@@ -160,10 +162,21 @@ cargo test --workspace
 cargo build --release -p vanta
 ```
 
-The suite currently contains 195 tests, including headless editor-loop tests
+The suite currently contains 198 tests, including headless editor-loop tests
 and PTY tests that run the real binary: save, undo/redo, Visual selections,
-search, horizontal scrolling, kill-and-recover, and terminal restoration on
-panic. `cargo xtask check` is the same gate CI runs.
+search, horizontal scrolling, cell-only cursor motion, one-line scrolling,
+kill-and-recover, and terminal restoration on panic. `cargo xtask check` is the
+same gate CI runs.
+
+The one-line scroll PTY test uses a 120-line file in an 80x24 terminal, moves
+to the last visible text row and scrolls once with `j`. It caps the emitted
+frame at 2,048 ANSI bytes. Windows 11 ConPTY measured 1,871 bytes for that
+frame, leaving 208 bytes (about 11%) of headroom. The direct backend output is
+smaller: a `Screen` unit test asserts the text-area scroll-region sequence, no
+full-screen clear and no repaint of unchanged rows. ConPTY consumes the scroll
+sequence and re-renders the 23-row text area, so 2,048 is a regression ceiling
+for the observed host behavior, not a claim that the host emits only the cells
+Vanta diffed.
 
 ## Repository layout
 
@@ -192,8 +205,11 @@ This is a 0.1 preview, not a daily-driver Vim replacement.
 - No configuration file, Lua API, plugins, syntax highlighting, LSP, Git,
   picker, completion, embedded terminal or jobs.
 - No mouse, bracketed paste, clipboard integration or line-number gutter.
-- Rendering is row-granular: it does not diff individual cells, and capability
-  detection uses environment signals rather than active terminal queries.
+- Rendering diffs individual cells, but capability detection uses environment
+  signals rather than active terminal queries, and the real-binary scroll
+  ceiling is set by ConPTY's text-area repaint rather than Vanta's direct cell
+  output. The 1 GiB fixture, PERF-006 evidence, active probes and three-
+  platform CI remain open.
 - Large-file mode activates at 20 MiB and opens through a chunked decoder; the
   1 GiB BUF-012 fixture and PERF-006 evidence are not recorded yet, and saving
   still builds the encoded output in memory. External-change detection and
@@ -208,7 +224,7 @@ are ordered by dependency and cannot be waived because code exists.
 
 | Milestone | Outcome | State |
 |---|---|---|
-| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups, swap recovery, encoding, 20 MiB large-file mode and row-damage rendering exist; 1 GiB/PERF-006 evidence, cell-level damage, active capability probes and three-platform CI do not. |
+| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups, swap recovery, encoding, 20 MiB large-file mode and cell-level rendering exist, including a 2,048-byte scroll-frame ceiling (1,871 bytes measured under Windows ConPTY); 1 GiB/PERF-006 evidence, active capability probes and three-platform CI do not. |
 | 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Early slice: basic modes and linear undo only. |
 | 3 | Search, typed Lua configuration, tree-sitter syntax | Not started. |
 | 4 | Modules, LSP, Git, picker, terminal and plugin runtime | Not started. |

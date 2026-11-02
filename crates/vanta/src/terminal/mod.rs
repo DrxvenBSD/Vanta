@@ -97,6 +97,11 @@ pub struct Frame {
     /// The crossterm backend compares this value with the previous frame and
     /// invalidates its front buffer on a resize.
     pub size: Size,
+    /// Index of the first buffer line shown in the text area.
+    ///
+    /// The backend uses a one-line change in this value to scroll the text
+    /// region and repaint only the newly exposed row and changed overlays.
+    pub top_line: usize,
     /// The complete screen, top row first.
     pub rows: Vec<String>,
     /// The first buffer display column shown on every text row.

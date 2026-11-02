@@ -117,11 +117,19 @@ All notable changes to Vanta are recorded here. The format follows
   swap bound. The generated 20 MiB tests cover UTF-8, UTF-16LE, lossless latin-1
   and byte-exact unchanged saves; a just-below-threshold file stays in normal
   mode. The 1 GiB acceptance fixture and PERF-006 numbers remain open.
-- Damage-aware terminal rendering (`TERM-004`): the backend retains a
-  front buffer and rewrites only rows whose text or overlays changed. An
-  unchanged frame writes no bytes; a cursor-only move never clears the screen
-  or repaints buffer rows. `Frame` now carries the size used to compose it, so
-  a resize invalidates all rows. This is row-granular damage, not a cell grid.
+- Cell-accurate terminal rendering (`TERM-004`): the backend retains a grid
+  of character-and-style cells and rewrites only changed cells, coalesced into
+  horizontal runs. An unchanged frame writes no bytes; a cursor-only move
+  never clears the screen or repaints buffer cells. A one-line vertical
+  viewport move sets a text-area scroll region, scrolls the front buffer and
+  paints only the newly exposed row and changed status cells. The first frame
+  and a resize remain full repaints. Selection and search overlays stay
+  reverse-video/underlined, and wide glyphs repaint as complete pairs.
+- A real-binary one-line-scroll budget test caps the frame at 2,048 ANSI bytes;
+  Windows 11 ConPTY measured 1,871 bytes. The direct `Screen` path emits a
+  scroll-region sequence and no full clear, proven by a unit test. ConPTY
+  re-renders the 23-row text area, so the PTY ceiling is a host-behavior
+  regression guard, not a cell-minimal byte count.
 - Capability fallbacks: `NO_COLOR` and `TERM=dumb` disable foreground color;
   `COLORTERM`, `TERM` and known terminal identifiers select truecolor, 256 or
   16 colors; synchronized output is bracketed for known terminals and can be
@@ -188,8 +196,11 @@ All notable changes to Vanta are recorded here. The format follows
 - Large-file mode starts at 20 MiB with streamed opening. Saving still
   materializes the encoded output, and the 1 GiB fixture plus PERF-006 evidence
   are not recorded yet.
-- Rendering damage is row-granular. Cell-level diffing, active terminal probes
-  and terminfo color negotiation remain open; the capability detector currently
-  uses environment signals only.
+- Rendering now diffs individual cells and optimizes one-line vertical scrolls.
+  Active terminal probes, terminfo color negotiation and a synchronized-output
+  tearing test remain open; the capability detector uses environment signals
+  only. Real-binary scroll frames on Windows ConPTY are capped at 2,048 bytes
+  (1,871 measured) because ConPTY repaints the text area; the direct backend
+  output is smaller and covered by `Screen` unit tests.
 - The workspace version is `0.1.0` and this is a preview. A `1.0` release waits
   for the P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.
