@@ -31,6 +31,9 @@ Git integration and plugins are still in progress. A release will carry the
 - Encoding detection and preservation: UTF-8 with or without a BOM, UTF-16LE/BE
   and UTF-32LE/BE with a BOM, and a lossless latin-1 fallback. `:set fileencoding`
   selects the next write's encoding; `:set bomb` controls the UTF-8 BOM.
+- Large-file mode at 20 MiB: chunked decoding into the rope, a `[LARGE]` status
+  marker, lazy initial swaps and a wider 1 MiB/10-second swap bound. Opening is
+  streamed; saving still materializes the encoded output.
 - A panic-safe terminal session: raw mode, the alternate screen and the cursor
   are restored on normal exit, early errors and panic.
 - Windows 11 is the verified platform. Linux and macOS CI is configured in
@@ -153,7 +156,7 @@ cargo test --workspace
 cargo build --release -p vanta
 ```
 
-The suite currently contains 179 tests, including headless editor-loop tests
+The suite currently contains 183 tests, including headless editor-loop tests
 and PTY tests that run the real binary: save, undo/redo, Visual selections,
 search, horizontal scrolling, kill-and-recover, and terminal restoration on
 panic. `cargo xtask check` is the same gate CI runs.
@@ -185,8 +188,10 @@ This is a 0.1 preview, not a daily-driver Vim replacement.
 - No configuration file, Lua API, plugins, syntax highlighting, LSP, Git,
   picker, completion, embedded terminal or jobs.
 - No mouse, bracketed paste, clipboard integration or line-number gutter.
-- Large-file mode, external-change detection and symlink-aware saves are not
-  implemented.
+- Large-file mode activates at 20 MiB and opens through a chunked decoder; the
+  1 GiB BUF-012 fixture and PERF-006 evidence are not recorded yet, and saving
+  still builds the encoded output in memory. External-change detection and
+  symlink-aware saves are not implemented.
 - Cross-platform behavior is not yet evidenced. Windows 11 has the full local
   test run; the Linux/macOS workflow definitions have not completed on GitHub.
 
@@ -197,7 +202,7 @@ are ordered by dependency and cannot be waived because code exists.
 
 | Milestone | Outcome | State |
 |---|---|---|
-| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups, swap recovery and encoding detection/conversion exist; large-file mode, damage renderer and capability probe do not. |
+| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Partial: text engine, atomic save, backups, swap recovery, encoding and 20 MiB large-file mode exist; 1 GiB/PERF-006 evidence, damage renderer and capability probe do not. |
 | 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Early slice: basic modes and linear undo only. |
 | 3 | Search, typed Lua configuration, tree-sitter syntax | Not started. |
 | 4 | Modules, LSP, Git, picker, terminal and plugin runtime | Not started. |

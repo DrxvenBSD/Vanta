@@ -26,6 +26,7 @@ mod tests;
 pub use edit::TextEdit;
 
 use ropey::Rope;
+use std::io::{self, Read};
 
 use crate::line_ending::LineEnding;
 use history::History;
@@ -89,6 +90,27 @@ impl Buffer {
         }
     }
 
+    /// Builds a buffer from a UTF-8 byte stream without materializing the
+    /// whole text as one string.
+    ///
+    /// The reader is consumed incrementally while the rope is built; the
+    /// caller's source can therefore be a decoded file stream. The line ending
+    /// is detected from the first `\n` in the stream. Invalid UTF-8 returns an
+    /// I/O error and leaves no partially constructed buffer observable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`io::Error`] when the reader fails or supplies invalid UTF-8.
+    pub fn from_reader<R: Read>(reader: R) -> io::Result<Self> {
+        let mut reader = LineEndingReader::new(reader);
+        let text = Rope::from_reader(&mut reader)?;
+        Ok(Self {
+            text,
+            line_ending: reader.line_ending(),
+            history: History::new(),
+        })
+    }
+
     /// Returns the detected line ending of the buffer.
     pub fn line_ending(&self) -> LineEnding {
         self.line_ending
@@ -98,5 +120,46 @@ impl Buffer {
 impl Default for Buffer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Passes bytes through while recording the first line terminator.
+struct LineEndingReader<R> {
+    inner: R,
+    line_ending: LineEnding,
+    seen_newline: bool,
+    previous_cr: bool,
+}
+
+impl<R: Read> LineEndingReader<R> {
+    fn new(inner: R) -> Self {
+        Self {
+            inner,
+            line_ending: LineEnding::Lf,
+            seen_newline: false,
+            previous_cr: false,
+        }
+    }
+
+    fn line_ending(&self) -> LineEnding {
+        self.line_ending
+    }
+}
+
+impl<R: Read> Read for LineEndingReader<R> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        let count = self.inner.read(output)?;
+        for &byte in &output[..count] {
+            if byte == b'\n' && !self.seen_newline {
+                self.line_ending = if self.previous_cr {
+                    LineEnding::Crlf
+                } else {
+                    LineEnding::Lf
+                };
+                self.seen_newline = true;
+            }
+            self.previous_cr = byte == b'\r';
+        }
+        Ok(count)
     }
 }

@@ -28,6 +28,12 @@ use crate::swap::{SwapError, SwapFile, SwapSnapshot, recoverable_untitled};
 
 /// How long a deferred swap may wait for input before it is flushed.
 const IDLE_SWAP_FLUSH: Duration = Duration::from_secs(4);
+/// Large-file swaps flush less often to bound write amplification.
+const LARGE_SWAP_INTERVAL: usize = 1024 * 1024;
+/// Idle delay for a deferred large-file swap.
+const LARGE_IDLE_SWAP_FLUSH: Duration = Duration::from_secs(10);
+/// Files at or above this size open in large-file mode (`BUF-012`).
+const LARGE_FILE_THRESHOLD: u64 = 20 * 1024 * 1024;
 
 use crate::view::{self, TABSTOP};
 
@@ -162,6 +168,8 @@ pub(crate) struct Document {
     bom: bool,
     /// A non-fatal notice from encoding detection at open time.
     encoding_warning: Option<String>,
+    /// Whether the source file crossed the large-file threshold at open.
+    large_file: bool,
 }
 
 impl Document {
@@ -173,17 +181,42 @@ impl Document {
     /// latin-1 with a warning, preserving every byte for the next write.
     pub(crate) fn open(path: impl Into<PathBuf>) -> Result<Self, EditorError> {
         let path = path.into();
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        let large_file = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata.len() >= LARGE_FILE_THRESHOLD,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
             Err(source) => return Err(EditorError::Read { path, source }),
         };
-        let decoded = decode_file(&bytes);
 
-        let mut document = Self::from_parts(Some(path), &decoded.text);
-        document.encoding = decoded.encoding;
-        document.bom = decoded.bom;
-        document.encoding_warning = decoded.warning;
+        let mut document = if large_file {
+            let decoded = vanta_fs::open_decoded(&path).map_err(|source| EditorError::Read {
+                path: path.clone(),
+                source,
+            })?;
+            let buffer =
+                Buffer::from_reader(decoded.reader).map_err(|source| EditorError::Read {
+                    path: path.clone(),
+                    source,
+                })?;
+            let mut document = Self::from_buffer(Some(path), buffer);
+            document.encoding = decoded.encoding;
+            document.bom = decoded.bom;
+            document.encoding_warning = decoded.warning;
+            document.large_file = true;
+            document
+        } else {
+            let bytes = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+                Err(source) => return Err(EditorError::Read { path, source }),
+            };
+            let decoded = decode_file(&bytes);
+
+            let mut document = Self::from_parts(Some(path), &decoded.text);
+            document.encoding = decoded.encoding;
+            document.bom = decoded.bom;
+            document.encoding_warning = decoded.warning;
+            document
+        };
         document.begin_swap();
         Ok(document)
     }
@@ -196,8 +229,14 @@ impl Document {
     }
 
     fn from_parts(path: Option<PathBuf>, text: &str) -> Self {
+        Self::from_buffer(path, Buffer::from_text(text))
+    }
+
+    /// Builds a document around an already constructed buffer.
+    fn from_buffer(path: Option<PathBuf>, buffer: Buffer) -> Self {
+        let large_file = buffer.len_bytes() as u64 >= LARGE_FILE_THRESHOLD;
         Self {
-            buffer: Buffer::from_text(text),
+            buffer,
             path,
             cursor: LineCol::default(),
             preferred_col: None,
@@ -211,6 +250,7 @@ impl Document {
             encoding: TextEncoding::Utf8,
             bom: false,
             encoding_warning: None,
+            large_file,
         }
     }
 
@@ -243,6 +283,11 @@ impl Document {
     /// Returns `true` when the buffer has unsaved changes.
     pub(crate) fn is_modified(&self) -> bool {
         self.buffer.is_modified()
+    }
+
+    /// Returns whether this document opened above the large-file threshold.
+    pub(crate) fn is_large_file(&self) -> bool {
+        self.large_file
     }
 
     /// Returns the recovery decision blocking normal editing, if any.
@@ -343,6 +388,7 @@ impl Document {
         };
         let snapshot = snapshot.clone();
 
+        self.large_file = self.large_file || snapshot.text.len() as u64 >= LARGE_FILE_THRESHOLD;
         self.buffer = Buffer::from_text(&snapshot.text);
         self.buffer.mark_modified();
         self.cursor = self
@@ -550,9 +596,9 @@ impl Document {
 
         self.swap = Some(swap);
         self.swap_owned = true;
-        // The failure is stored in `swap_warning` and rendered by the editor;
-        // opening the buffer still succeeds.
-        let _ = self.write_swap();
+        // A clean buffer has no unsaved state to recover. Defer the first
+        // swap write until a mutation; this keeps large-file opens free of a
+        // whole-buffer write before the user has typed anything.
     }
 
     /// Creates a new swap identity when the buffer has none.
@@ -585,9 +631,10 @@ impl Document {
         self.swap_owned = true;
     }
 
-    /// Flushes the swap after a mutation, bounded by the 200-byte incremental
-    /// rule for large buffers. Small buffers flush every keystroke so a crash
-    /// loses no typed text.
+    /// Flushes the swap after a mutation. Small buffers flush every keystroke
+    /// so a crash loses no typed text; other buffers use the incremental
+    /// 200-byte/4-second rule, and large-file mode uses a 1 MiB/10-second rule
+    /// to bound write amplification.
     fn note_swap_change(&mut self, bytes: usize, force: bool) {
         if self.recovery.is_some() {
             return;
@@ -612,17 +659,22 @@ impl Document {
 
         self.swap_pending_bytes = self.swap_pending_bytes.saturating_add(bytes);
         // A named small buffer flushes on every mutation. An untitled buffer,
-        // and a large named buffer, follows the spec's incremental policy: a
-        // flush at 200 changed bytes or after four seconds without input. The
-        // editor loop wakes on the deadline and calls `flush_idle_swap`.
+        // and a named buffer over 16 KiB, follows the spec's incremental
+        // policy. Large-file mode uses a wider bound. The editor loop wakes on
+        // the deadline and calls `flush_idle_swap`.
         let small_named = !self.is_untitled() && self.buffer.len_bytes() <= 16 * 1024;
-        if force || small_named || self.swap_pending_bytes >= 200 {
+        let (interval, idle) = if self.large_file {
+            (LARGE_SWAP_INTERVAL, LARGE_IDLE_SWAP_FLUSH)
+        } else {
+            (200, IDLE_SWAP_FLUSH)
+        };
+        if force || small_named || self.swap_pending_bytes >= interval {
             self.swap_flush_deadline = None;
             // `write_swap` records the failure in `swap_warning`; the edit
             // itself stays applied and the user can keep working.
             let _ = self.write_swap();
         } else {
-            self.swap_flush_deadline = Some(Instant::now() + IDLE_SWAP_FLUSH);
+            self.swap_flush_deadline = Some(Instant::now() + idle);
         }
     }
 
@@ -1058,12 +1110,8 @@ mod tests {
         let deadline = document.swap_flush_deadline().expect("deferred flush");
         let swap = document.swap.as_ref().expect("swap identity");
         assert!(
-            !swap
-                .read()
-                .expect("read initial swap")
-                .text
-                .starts_with('y'),
-            "a sub-200-byte edit must not flush immediately"
+            !swap.path().exists(),
+            "a clean open and a sub-200-byte edit must not create a swap before the deadline"
         );
 
         assert!(

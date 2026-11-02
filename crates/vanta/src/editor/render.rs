@@ -301,6 +301,11 @@ impl Editor {
         } else {
             ""
         };
+        let large = if self.document.is_large_file() {
+            " [LARGE]"
+        } else {
+            ""
+        };
         let cursor = self.document.cursor();
         let position = format!("{}:{}", cursor.line.get() + 1, cursor.col.get() + 1);
         let mut message = self.message.clone().unwrap_or_default();
@@ -313,7 +318,7 @@ impl Editor {
         // Mode and cursor come first so they survive truncation on narrow
         // terminals; the file name follows.
         format!(
-            "{mode}  {position}  {}{flags}  {message}",
+            "{mode}  {position}  {}{flags}{large}  {message}",
             self.document.display_name()
         )
     }

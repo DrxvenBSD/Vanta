@@ -29,6 +29,9 @@ pub use backup::{BackupOptions, SaveOutcome, save_with_backup};
 mod encoding;
 pub use encoding::{DecodedText, EncodeError, TextEncoding, decode_file, encode_text};
 
+mod stream;
+pub use stream::{DecodedFile, DecodedReader, open_decoded};
+
 /// A temporary file sequence shared by all saves in this process.
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

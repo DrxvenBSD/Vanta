@@ -111,6 +111,12 @@ All notable changes to Vanta are recorded here. The format follows
   plus the offending byte offset when latin-1 cannot represent a character;
   `:set bomb`/`:set nobomb` controls a UTF-8 BOM. Malformed BOM data also falls
   back losslessly instead of being partially decoded.
+- Large-file mode (`BUF-012`): files at or above 20 MiB open through a bounded,
+  chunked encoding decoder into the rope, show a `[LARGE]` status marker, defer
+  the initial swap until the first unsaved change, and use a 1 MiB/10-second
+  swap bound. The generated 20 MiB tests cover UTF-8, UTF-16LE, lossless latin-1
+  and byte-exact unchanged saves; a just-below-threshold file stays in normal
+  mode. The 1 GiB acceptance fixture and PERF-006 numbers remain open.
 - Headless editor-loop tests and PTY tests that run the real binary, verify
   alternate-screen restoration on exit and on panic, exercise undo/redo,
   range operators, Visual selections, literal search, CRLF and grapheme edge
@@ -120,6 +126,9 @@ All notable changes to Vanta are recorded here. The format follows
 
 ### Changed
 
+- A clean named buffer no longer creates a swap file on open. The first
+  unsaved change creates it; large-file mode widens the deferred flush bound to
+  1 MiB or 10 seconds.
 - Internal structure only: `Buffer` is split into storage, position, measure
   and edit modules; editor state lives in a `Document`, and every text change
   goes through `Editor::apply_edit` -> `Document::replace` -> `Buffer::apply`.
@@ -166,5 +175,8 @@ All notable changes to Vanta are recorded here. The format follows
   embedded terminal or job runner. Atomic save does not yet write through
   symlinks. Swap recovery covers the open buffer rather than a multi-buffer
   swap set, and the `directory` option is absent.
+- Large-file mode starts at 20 MiB with streamed opening. Saving still
+  materializes the encoded output, and the 1 GiB fixture plus PERF-006 evidence
+  are not recorded yet.
 - The workspace version is `0.1.0` and this is a preview. A `1.0` release waits
   for the P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.
