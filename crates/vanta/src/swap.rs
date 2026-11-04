@@ -531,7 +531,7 @@ fn hash_path(path: &Path) -> u64 {
 /// Canonicalizing the parent keeps a relative path and its absolute spelling
 /// on the same swap file; falling back to the supplied path keeps the editor
 /// usable when the parent cannot be resolved.
-fn canonical_identity(path: &Path) -> PathBuf {
+pub(crate) fn canonical_identity(path: &Path) -> PathBuf {
     if let Ok(canonical) = path.canonicalize() {
         return canonical;
     }
@@ -584,7 +584,7 @@ fn remove_path(path: &Path) -> Result<(), SwapError> {
 }
 
 /// Returns the state-directory root, honoring `VANTA_STATE_DIR`.
-fn state_root() -> Option<PathBuf> {
+pub(crate) fn state_root() -> Option<PathBuf> {
     if let Some(directory) = env::var_os("VANTA_STATE_DIR") {
         return Some(PathBuf::from(directory));
     }

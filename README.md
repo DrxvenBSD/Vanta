@@ -5,22 +5,36 @@ language to a single native binary built for low latency, low memory use and
 predictable behavior, with the development tooling users normally assemble from
 plugins planned as first-party modules.
 
-**Status: 0.1 preview.** Vanta is usable today for single-file modal editing,
-atomic saves, backups and crash recovery. It is **not** the 1.0 release
-described in [PROJECT_SPEC.md](PROJECT_SPEC.md): multiple buffers and windows,
-the full operator/text-object grammar, configuration, syntax highlighting, LSP,
-Git integration and plugins are still in progress. A release will carry the
-`1.0` version only after the spec's P0/P1 requirements and gates G1-G5 pass.
+**Status: 0.2.0-alpha.1.** Vanta is a real modal editor with multiple buffers,
+split windows, tab pages, a substantial Vim grammar, blockwise Visual editing,
+Select mode, persistent undo, macros and dot-repeat. It is still an alpha, not
+the 1.0 release described in [PROJECT_SPEC.md](PROJECT_SPEC.md): configuration,
+syntax highlighting, LSP, Git integration and plugins are not implemented yet.
+A release will carry the `1.0` version only after the spec's P0/P1 requirements
+and gates G1-G5 pass.
 
 ## What works today
 
-- Normal, Insert, Visual and Visual Line modes with grapheme-safe editing.
-- Cursor motions `h` `j` `k` `l`, arrows, `w` `b`, `0` `$`, with a desired
-  display column across short lines and horizontal scrolling past the window.
-- Normal verbs `x`, `dd`, `yy`, `dw`, `db`, `p`, `P`, `o`, `O`; Visual verbs
-  `d`/`x`, `y`, `c`; one unnamed register that preserves characterwise versus
-  linewise contents.
-- Linear undo/redo with Insert-session coalescing and a truthful modified flag.
+- Normal, Insert, Replace, Visual, Visual Line, Visual Block, Select and
+  Command-line modes with grapheme-safe editing.
+- Multiple buffers (`:e`, `:ls`, `:b`, `:bnext`, `:bprev`, `:bd`) with
+  independent cursor, undo and modified state.
+- Horizontal and vertical splits (`<C-w>s`, `<C-w>v`) with directional focus,
+  rotation, resize, close and only-this-window commands, plus tab pages
+  (`:tabnew`, `:tabclose`, `gt`, `gT`).
+- Cursor motions `h` `j` `k` `l`, arrows, `w` `b` `e` `ge`, `0` `^` `$`,
+  `gg` `G`, `f` `t` `F` `T` `;` `,`, `%`, `{` `}`, with a desired display
+  column across short lines and horizontal scrolling past the window.
+- Counted operators over motions and text objects: `d` `c` `y` `>` `<` `=`
+  `g~` `gu` `gU`; text objects `iw` `aw`, `is` `as`, `ip` `ap`, pairs, quoted
+  strings and tags; `x` `X` `dd` `yy` `D` `C` `Y` `s` `S` `p` `P` `o` `O`
+  `J` `gJ` `~` `r`.
+- Named and numbered registers, black-hole and append registers, macros with
+  `q`/`@`, dot-repeat and `:normal`.
+- Visual Block delete/yank/change/insert/append/`$` and block paste; Select
+  mode replacement and cancellation; `gv` reselect.
+- An undo tree with `u`/`Ctrl-r`, `g-`/`g+`, persistent history, Insert-session
+  coalescing and a truthful modified flag.
 - Literal `/pattern` search with a live prompt, `n`/`N`, wrapping and visible
   match highlights.
 - Atomic save that fsyncs a temporary file, renames over the target and never
@@ -101,18 +115,23 @@ Exit codes: `0` success, `1` startup/runtime error, `2` invalid arguments.
 | Context | Keys | Action |
 |---|---|---|
 | Normal | `h` `j` `k` `l`, arrows | Move the cursor |
-| Normal | `w` `b` | Next/previous word start |
-| Normal | `0` `$` | Line start / last character |
-| Normal | `i` `a` `A` | Insert before, after, or at end of line |
-| Normal | `o` `O` | Open a line below/above and insert |
-| Normal | `x` | Delete the character under the cursor |
-| Normal | `dd` `yy` `dw` `db` | Delete/yank line or word range |
-| Normal | `p` `P` | Put after/before the cursor |
-| Normal | `v` `V` | Start characterwise/linewise Visual mode |
-| Normal | `u`, `Ctrl-r` | Undo, redo |
-| Normal | `/`, `n`, `N` | Search, next match, previous match |
+| Normal | `w` `b` `e` `ge`, `0` `^` `$`, `gg` `G` | Word, line and file motions |
+| Normal | `f` `t` `F` `T` `;` `,`, `%`, `{` `}` | Find, match-pair and paragraph motions |
+| Normal | `i` `a` `I` `A` `o` `O` `gi` | Insert entry points |
+| Normal | `R` | Replace mode |
+| Normal | `x` `X` `dd` `yy` `dw` `db` `D` `C` `Y` `s` `S` `p` `P` | Edit, delete, yank or put text |
+| Normal | `d` `c` `y` `>` `<` `=` `g~` `gu` `gU` with motions or text objects | Operators |
+| Normal | `v` `V` `Ctrl-v` | Characterwise, linewise or blockwise Visual mode |
+| Normal | `gh` `gH`, `gv` | Select characterwise/linewise, or reselect |
+| Normal | `u`, `Ctrl-r`, `g-`, `g+` | Undo, redo, older/newer undo state |
+| Normal | `q{0-9a-zA-Z"}` | Record a macro |
+| Normal | `@{0-9a-zA-Z"}` | Replay a macro |
+| Normal | `.` | Repeat the last change |
+| Normal | `Ctrl-w` then `s` `v` `h` `j` `k` `l` `w` `p` `q` `o` `=` `r` | Window commands |
+| Normal | `gt`, `gT` | Next/previous tab page |
+| Normal | `/`, `?`, `n`, `N`, `*`, `#` | Search forward/backward and repeat |
 | Normal | `:` | Enter a command |
-| Visual | motions, `d`/`x`, `y`, `c`, `Esc` | Extend, delete, yank, change, cancel |
+| Visual | motions, `d`/`x`, `y`, `c`, `I`, `A`, `$`, `p`, `Esc` | Extend or operate on the selection |
 | Insert | text, `Backspace`, `Enter`, `Esc` | Edit and return to Normal mode |
 
 ### Commands
@@ -124,6 +143,11 @@ Exit codes: `0` success, `1` startup/runtime error, `2` invalid arguments.
 | `:wq`, `:wq <path>`, `:x` | Save and quit |
 | `:q`, `:q!` | Quit, or force quit and discard changes |
 | `:e <path>`, `:e! <path>` | Open a file, or discard changes and open |
+| `:ls`, `:b <N>`, `:bnext`, `:bprev`, `:bd[!]` | List, select, cycle or delete buffers |
+| `:sp [file]`, `:vsp [file]` | Split the focused window horizontally/vertically |
+| `:tabnew [file]`, `:tabclose`, `:tabnext`, `:tabprev` | Create, close or switch tab pages |
+| `:normal <keys>` | Run Normal-mode keys through the shared parser |
+| `:registers` | Show register contents |
 | `:recover [file]`, `:recover!` | Load a retained swap; `!` replaces a modified buffer |
 | `:preserve` | Force a swap flush |
 | `:set backup` / `:set writebackup` | Keep a permanent/transient backup on save |
@@ -167,12 +191,12 @@ cargo test --workspace
 cargo build --release -p vanta
 ```
 
-The suite currently contains 201 tests plus one ignored 1 GiB performance test,
-including headless editor-loop tests
-and PTY tests that run the real binary: save, undo/redo, Visual selections,
-search, horizontal scrolling, cell-only cursor motion, one-line scrolling,
-kill-and-recover, and terminal restoration on panic. `cargo xtask check` is the
-same gate CI runs.
+The suite currently contains 248 tests plus one ignored 1 GiB performance test,
+including headless editor-loop tests, 13 end-to-end editor-surface tests for
+buffers, splits, tabs, Visual Block and Select, and PTY tests that run the real
+binary: save, undo/redo, Visual selections, search, horizontal scrolling,
+cell-only cursor motion, one-line scrolling, kill-and-recover, and terminal
+restoration on panic. `cargo xtask check` is the same gate CI runs.
 
 The one-line scroll PTY test uses a 120-line file in an 80x24 terminal, moves
 to the last visible text row and scrolls once with `j`. It caps the emitted
@@ -207,13 +231,18 @@ ConPTY at 80x24 with `TERM=xterm-256color`.
 
 ## Limitations
 
-This is a 0.1 preview, not a daily-driver Vim replacement.
+This is a 0.2 alpha, not yet a daily-driver Vim replacement.
 
-- One buffer, one window: no splits, tabs, `:b` or window commands.
-- No counts, text objects, dot-repeat, macros, named/numbered registers,
-  Replace/Select/Visual Block modes, marks, jumplist or quickfix.
-- Undo is linear; there is no undo tree, persistent undo or `:earlier`/`:later`.
-- Search is literal: no regex, `?`, offsets, `:s`, `:g` or search history.
+- No user mapping engine (`:map`, `:nmap`, `:vmap`, `:imap`, `<Plug>`,
+  `<leader>`), command abbreviations or configurable timeout behavior.
+- No marks, jumplist, changelist or quickfix/location lists.
+- The undo tree has persistent history, but `:earlier`/`:later`, `:undojoin`
+  and complete Vim branch parity remain open.
+- There is no 500-case Neovim differential corpus yet; the current
+  compatibility evidence is the focused editor-flow and G2 suites.
+- Terminal key protocols beyond the default legacy encoding
+  (`modifyOtherKeys` and the kitty keyboard protocol) are not implemented.
+- Search is literal: no regex, offsets, `:s`, `:g` or search history.
 - Encoding detection is fixed to BOM-first UTF-8/UTF-16/UTF-32 and a latin-1
   fallback; `fileencodings` is not configurable. Malformed BOM data opens as
   lossless latin-1 rather than a read-only binary buffer.
@@ -241,10 +270,29 @@ are ordered by dependency and cannot be waived because code exists.
 | Milestone | Outcome | State |
 |---|---|---|
 | 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Passed on Windows 11 evidence: text engine, atomic save, backups, swap recovery, encoding, 20 MiB large-file mode, active capability detection and cell-level rendering exist. The 1 GiB harness measured 1.895 s first frame and 1.165x RSS against 8 s and 2.5x budgets; one-line scroll is 1,871 bytes against 2,048. Three-platform CI still needs a green GitHub run. |
-| 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Early slice: basic modes and linear undo only. |
+| 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Large slice implemented and green: counted grammar, text objects, registers, macros, dot-repeat, persistent undo tree, Visual Block, Select, buffers, splits and tabs. Gate remains open for mappings, key protocols, marks/jumplist/changelist/quickfix and the 500-case differential corpus. |
 | 3 | Search, typed Lua configuration, tree-sitter syntax | Not started. |
 | 4 | Modules, LSP, Git, picker, terminal and plugin runtime | Not started. |
 | 5 | Reliability, performance, three-platform proof and 1.0 release | Not started. |
+
+### G2 gap list (next)
+
+G2 remains open. The next work is ordered by user-visible risk:
+
+1. **Mapping engine** — `:map`/`:nmap`/`:vmap`/`:imap`, recursive and
+   non-recursive forms, `<Plug>`, `<leader>`/`mapleader`, timeout handling and
+   mappings that are valid prefixes of existing commands. No default Vim
+   mapping is removed.
+2. **Differential corpus** — at least 500 cases under `tests/compat/cases/`,
+   generated and reviewed against Neovim 0.12.6, covering counts, registers,
+   operators, text objects, Visual/Block/Select, undo groups and failure cases;
+   every skip is recorded in the specification's difference register.
+3. **Key protocols** — legacy, `modifyOtherKeys` and kitty keyboard protocol
+   decoding, with an explicit fallback when the terminal advertises none.
+4. **Marks and lists** — local/global marks, jumplist (`Ctrl-o`/`Ctrl-i`),
+   changelist (`g;`/`g,`) and quickfix/location lists.
+5. **Grammar matrix** — remaining operator/text-object edge cases, exact undo
+   grouping and platform-specific Unicode/line-ending parity.
 
 No `1.0` tag will be created before gates G1-G5 pass. Contributions toward
 those milestones are welcome; read [AGENTS.md](AGENTS.md) first.

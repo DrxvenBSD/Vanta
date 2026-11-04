@@ -24,6 +24,7 @@ mod storage;
 mod tests;
 
 pub use edit::TextEdit;
+pub use history::{UndoEdit, UndoKind, UndoNode, UndoSnapshot};
 
 use ropey::Rope;
 use std::io::{self, Read};

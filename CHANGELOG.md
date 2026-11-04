@@ -6,7 +6,25 @@ All notable changes to Vanta are recorded here. The format follows
 
 ## Unreleased
 
+### Changed
+
+- Version metadata moved to `0.2.0-alpha.1` for the G2 editor-surface alpha.
+
+## [0.2.0-alpha.1] - 2026-11-04
+
 ### Added
+
+- G2 editor surface: counted motions/operators and text objects, named and
+  numbered registers, macros, dot-repeat, `:normal`, Replace mode, blockwise
+  Visual editing, Select mode and `gv`.
+- Multiple buffers with independent cursor, undo and modified state, plus
+  `:ls`/`:b`/`:bnext`/`:bprev`/`:bd`.
+- Horizontal and vertical splits with directional focus, resize, rotate, close
+  and only-this-window commands; tab pages with `:tabnew`/`:tabclose` and
+  `gt`/`gT`.
+- A persistent undo tree with `g-`/`g+` and saved history.
+- Thirteen end-to-end editor-surface acceptance tests covering buffers,
+  splits, tabs, Visual Block and Select.
 
 - Public-release scaffolding: `README.md`, dual `LICENSE-MIT`/`LICENSE-APACHE`
   files, `.gitattributes`, a three-platform CI workflow (format, Clippy with
@@ -163,6 +181,11 @@ All notable changes to Vanta are recorded here. The format follows
 
 ### Fixed
 
+- Cursor synchronization no longer snaps every movement back to the previous
+  grapheme boundary, so Normal-mode `l`/`j`/`k` movements, insert positions,
+  Visual ranges and `dw` addresses are preserved into the next command.
+- `:e <path>` now refuses to discard a modified buffer unless the command is
+  `:e! <path>`; the same guard covers window and tab file opens.
 - `vanta-text` position conversion no longer resolves an out-of-range line
   column into the next line. Columns are content-relative, end of line is the
   boundary before the terminator, and the `\n` byte of a CRLF pair has no
@@ -186,22 +209,20 @@ All notable changes to Vanta are recorded here. The format follows
 
 - `rust-toolchain.toml` pins 1.94.0 because that is the installed compiler;
   PROJECT_SPEC §2.9 names 1.99.1. Align them once 1.99.1 is available.
-- Undo is linear, not the full undo tree: `g-`/`g+`, `U`, `:earlier`/`:later`,
-  `:undojoin`, `undolevels`, persistent undo and branch preservation are not
-  implemented. Registers are limited to the unnamed register; counts, named
-  registers, text objects, dot-repeat, macros, blockwise/rectangular Visual
-  mode, Replace/Select modes and additional motions are not implemented.
-  Search is literal and the `/` prompt always searches forward: there is no
-  regex, `?`, `:s`, search offsets or incremental matching while typing.
-  `n`/`N` repeat both directions and wrap. The editor is single-buffer and
-  single-window: there are no splits, tabs, buffer commands, marks, jumplist
-  or quickfix. Encoding detection is BOM-first UTF-8/UTF-16/UTF-32 with a
-  latin-1 fallback; `fileencodings` is not configurable. There is no
-  configuration file, Lua runtime, syntax highlighting, LSP, Git integration,
-  picker, completion,
-  embedded terminal or job runner. Atomic save does not yet write through
-  symlinks. Swap recovery covers the open buffer rather than a multi-buffer
-  swap set, and the `directory` option is absent.
+- The undo tree has persistent history, but `:earlier`/`:later`, `:undojoin`,
+  `undolevels` and complete Vim branch parity remain open. Counts, named and
+  numbered registers, text objects, dot-repeat, macros, blockwise Visual,
+  Replace and Select modes are implemented; the complete Vim grammar matrix
+  and differential corpus are not. Search is literal and both `/` and `?`
+  work, but there is no regex, `:s`, search offsets or incremental matching.
+  Marks, jumplist, changelist and quickfix are absent. There is no mapping
+  engine or configurable keymap. Encoding detection is BOM-first
+  UTF-8/UTF-16/UTF-32 with a latin-1 fallback; `fileencodings` is not
+  configurable. There is no configuration file, Lua runtime, syntax
+  highlighting, LSP, Git integration, picker, completion, embedded terminal or
+  job runner. Atomic save does not yet write through symlinks. Swap recovery
+  covers the open buffer rather than a multi-buffer swap set, and the
+  `directory` option is absent.
 - Large-file mode starts at 20 MiB with streamed opening. Saving still
   materializes the encoded output. The 1 GiB PERF-006/PERF-007 evidence is
   reproducible with `cargo xtask perf`.
@@ -211,5 +232,5 @@ All notable changes to Vanta are recorded here. The format follows
   open. Real-binary scroll frames on Windows ConPTY are capped at 2,048 bytes
   (1,871 measured) because ConPTY repaints the text area; the direct backend
   output is smaller and covered by `Screen` unit tests.
-- The workspace version is `0.1.0` and this is a preview. A `1.0` release waits
-  for the P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.
+- The workspace version is `0.2.0-alpha.1`. A `1.0` release waits for the
+  P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.

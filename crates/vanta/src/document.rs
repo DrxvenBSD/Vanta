@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use vanta_fs::{BackupOptions, SaveOutcome, TextEncoding, decode_file, encode_text};
 use vanta_text::{
     Buffer, ByteCol, BytePos, LineCol, LineEnding, LineNumber, TextEdit, TextError,
-    display_col_of_byte, next_grapheme_boundary, prev_grapheme_boundary,
+    display_col_of_byte, next_grapheme_boundary, prev_grapheme_boundary, snap_to_grapheme_boundary,
 };
 
 use crate::swap::{SwapError, SwapFile, SwapSnapshot, recoverable_untitled};
@@ -37,9 +37,11 @@ const LARGE_FILE_THRESHOLD: u64 = 20 * 1024 * 1024;
 
 use crate::view::{self, TABSTOP};
 
+mod motion;
 mod range;
 mod search;
 
+pub(crate) use motion::{Motion, TextObject};
 pub(crate) use range::{TextRange, VisualKind};
 pub(crate) use search::literal_matches;
 
@@ -170,6 +172,10 @@ pub(crate) struct Document {
     encoding_warning: Option<String>,
     /// Whether the source file crossed the large-file threshold at open.
     large_file: bool,
+    /// Checksummed persistent undo file for this buffer's canonical path.
+    undo_path: Option<PathBuf>,
+    /// The latest non-fatal persistent-undo failure or rejection.
+    undo_warning: Option<String>,
 }
 
 impl Document {
@@ -218,6 +224,7 @@ impl Document {
             document
         };
         document.begin_swap();
+        document.load_undo();
         Ok(document)
     }
 
@@ -251,6 +258,8 @@ impl Document {
             bom: false,
             encoding_warning: None,
             large_file,
+            undo_path: None,
+            undo_warning: None,
         }
     }
 
@@ -262,6 +271,41 @@ impl Document {
     /// Returns the cursor.
     pub(crate) fn cursor(&self) -> LineCol {
         self.cursor
+    }
+
+    /// Returns the file path this document was opened from, if any.
+    pub(crate) fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// Moves the cursor to `cursor`, clamping a stale line or column instead
+    /// of failing when a view switch follows an edit in another window.
+    pub(crate) fn move_cursor_to(&mut self, cursor: LineCol) -> Result<(), TextError> {
+        let line = cursor.line.get().min(self.line_count().saturating_sub(1));
+        let line = LineNumber::new(line);
+        let text = self.buffer.line_text(line)?;
+        let column = cursor.col.get().min(text.len());
+        let column = if column == text.len() {
+            column
+        } else {
+            snap_to_grapheme_boundary(&text, column)
+        };
+        self.cursor = LineCol {
+            line,
+            col: ByteCol::new(column),
+        };
+        self.preferred_col = None;
+        Ok(())
+    }
+
+    /// Restores a viewport cursor without discarding the desired vertical
+    /// column. Input events synchronize the window cursor before dispatch;
+    /// that must not turn `jj` into a column reset.
+    pub(crate) fn sync_cursor_to(&mut self, cursor: LineCol) -> Result<(), TextError> {
+        let preferred = self.preferred_col;
+        self.move_cursor_to(cursor)?;
+        self.preferred_col = preferred;
+        Ok(())
     }
 
     /// Returns whether this document has a filename yet.
@@ -298,6 +342,11 @@ impl Document {
     /// Returns the latest non-fatal swap error for the status row.
     pub(crate) fn swap_warning(&self) -> Option<&str> {
         self.swap_warning.as_deref()
+    }
+
+    /// Returns the latest non-fatal persistent-undo warning.
+    pub(crate) fn undo_warning(&self) -> Option<&str> {
+        self.undo_warning.as_deref()
     }
 
     /// Returns this document's backup options.
@@ -370,6 +419,7 @@ impl Document {
         }
         self.swap_pending_bytes = 0;
         self.swap_flush_deadline = None;
+        self.write_undo();
     }
 
     /// Loads the discovered swap into the buffer at its recorded cursor.
@@ -473,6 +523,9 @@ impl Document {
     /// waiting for a recovery decision belongs to the crashed session and is
     /// deliberately left on disk.
     pub(crate) fn close_session(&mut self) {
+        if !self.buffer.is_modified() {
+            self.write_undo();
+        }
         if self.swap_owned {
             self.remove_swap();
         }
@@ -773,7 +826,53 @@ impl Document {
             self.swap_flush_deadline = None;
         }
         self.path = Some(path);
+        self.undo_path = None;
+        self.undo_warning = None;
+        self.adopt_undo_path();
         Ok(outcome)
+    }
+
+    /// Loads the undo history belonging to the file contents just opened.
+    fn load_undo(&mut self) {
+        let Some(path) = self.path.as_deref().and_then(super::undo_file::undo_path) else {
+            return;
+        };
+        self.undo_path = Some(path.clone());
+        let text = self.buffer.to_string();
+        let Some(snapshot) = super::undo_file::load(&path, &text) else {
+            return;
+        };
+        if !self.buffer.restore_undo(&snapshot) {
+            self.undo_warning = Some(format!(
+                "undo: ignored inconsistent history {}",
+                path.display()
+            ));
+        }
+    }
+
+    /// Binds an undo path after save-as adopts a new filename.
+    fn adopt_undo_path(&mut self) {
+        self.undo_path = self.path.as_deref().and_then(super::undo_file::undo_path);
+    }
+
+    /// Writes the current tree after a save or clean close.
+    ///
+    /// Persistence failure never turns a successful file save into a failure;
+    /// it is surfaced in the status row and the buffer stays usable.
+    fn write_undo(&mut self) {
+        let Some(path) = self.undo_path.clone() else {
+            return;
+        };
+        let snapshot = self.buffer.undo_snapshot();
+        if snapshot.is_empty() {
+            self.undo_warning = None;
+            return;
+        }
+        let text = self.buffer.to_string();
+        match super::undo_file::save(&path, &text, &snapshot) {
+            Ok(()) => self.undo_warning = None,
+            Err(error) => self.undo_warning = Some(format!("undo: {error}")),
+        }
     }
 
     fn write_to(&self, path: &Path) -> Result<SaveOutcome, DocumentSaveError> {
@@ -807,6 +906,10 @@ impl Document {
         text: &str,
     ) -> Result<(TextEdit, LineCol), TextError> {
         let before = self.cursor;
+        let line = self.effective_line(before.line);
+        if let Ok(line_text) = self.buffer.line_text(line) {
+            self.buffer.remember_last_line(line, line_text);
+        }
         let edit = self.buffer.apply(range, text)?;
         Ok((edit, before))
     }
@@ -866,6 +969,50 @@ impl Document {
             }
             None => Ok(false),
         }
+    }
+
+    /// Moves to the previous undo state in time order (`g-`).
+    pub(crate) fn undo_earlier(&mut self) -> Result<bool, TextError> {
+        match self.buffer.undo_earlier()? {
+            Some(cursor) => {
+                self.cursor = self.clamp_normal_position(cursor)?;
+                self.preferred_col = None;
+                self.note_swap_change(200, true);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// Moves to the next undo state in time order (`g+`).
+    pub(crate) fn undo_later(&mut self) -> Result<bool, TextError> {
+        match self.buffer.undo_later()? {
+            Some(cursor) => {
+                self.cursor = self.clamp_normal_position(cursor)?;
+                self.preferred_col = None;
+                self.note_swap_change(200, true);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    /// Restores the line snapshot owned by `U`.
+    pub(crate) fn restore_line(&mut self) -> Result<bool, TextError> {
+        let Some((line, text)) = self.buffer.take_last_line() else {
+            return Ok(false);
+        };
+        let line = self.effective_line(line);
+        let current = self.buffer.line_text(line)?;
+        if current == text {
+            return Ok(false);
+        }
+        let content = self.buffer.line_byte_range(line)?;
+        self.break_undo();
+        let (edit, before) = self.stage_edit(content, &text)?;
+        let after = self.buffer.byte_to_line_col(self.line_start(line)?)?;
+        self.commit_edit(edit, before, after);
+        Ok(true)
     }
 
     /// Forces the next insert to start a new undo block.

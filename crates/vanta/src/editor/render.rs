@@ -38,6 +38,9 @@ impl Editor {
         if let Some(info) = self.document.recovery() {
             return self.recovery_frame(size, info);
         }
+        if self.tabs[self.active_tab].windows.len() > 1 {
+            return self.split_frame(size);
+        }
         let height = usize::from(size.height.max(1));
         let width = usize::from(size.width.max(1));
         let text_rows = height - 1;
@@ -106,6 +109,164 @@ impl Editor {
             search_matches: self.search_match_spans(top, text_rows, width, left),
             search_current: self.search_current_spans(top, text_rows, width, left),
         }
+    }
+
+    fn split_frame(&self, size: Size) -> Frame {
+        let width = usize::from(size.width.max(1));
+        let height = usize::from(size.height.max(1));
+        let area = super::Rect {
+            x: 0,
+            y: 0,
+            width,
+            height: height.saturating_sub(1),
+        };
+        let tab = &self.tabs[self.active_tab];
+        let mut rows = self.compose_layout(&tab.layout, area);
+        let prompt = if matches!(self.mode, Mode::Search) {
+            Some(format!("/{}", self.search_input))
+        } else {
+            self.command.as_ref().map(|command| format!(":{command}"))
+        };
+        let bottom = prompt.unwrap_or_else(|| self.status_text());
+        rows.push(render_line(&bottom, 0, width));
+        rows.resize(height, String::new());
+
+        let mut rects = Vec::new();
+        super::layout_rects(&tab.layout, area, &mut rects);
+        let focus = tab.focus;
+        let mut cursor = ScreenPos { row: 0, col: 0 };
+        let mut top_line = 0;
+        let mut horizontal_offset = 0;
+        if let Some((_, rect)) = rects.iter().find(|(id, _)| *id == focus) {
+            let window = self
+                .window_by_id(self.active_tab, focus)
+                .expect("the focused window belongs to the active tab");
+            let text_rows = rect.height.saturating_sub(1).max(1);
+            let line = self.document.line_text();
+            let column = display_col_of_byte(&line, self.document.cursor().col.get(), TABSTOP)
+                .get()
+                .saturating_sub(window.left_col)
+                .min(rect.width.saturating_sub(1));
+            let row = self
+                .document
+                .cursor()
+                .line
+                .get()
+                .saturating_sub(window.top_line)
+                .min(text_rows - 1);
+            cursor = ScreenPos {
+                row: u16::try_from(rect.y + row).unwrap_or(u16::MAX),
+                col: u16::try_from(rect.x + column).unwrap_or(u16::MAX),
+            };
+            top_line = window.top_line;
+            horizontal_offset = window.left_col;
+        }
+
+        Frame {
+            size,
+            top_line,
+            rows,
+            horizontal_offset,
+            cursor,
+            styles: Vec::new(),
+            selection: Vec::new(),
+            search_matches: Vec::new(),
+            search_current: Vec::new(),
+        }
+    }
+
+    fn compose_layout(&self, layout: &super::Layout, area: super::Rect) -> Vec<String> {
+        match layout {
+            super::Layout::Leaf(id) => self.render_window(*id, area),
+            super::Layout::Split {
+                vertical,
+                first,
+                second,
+            } => {
+                if *vertical {
+                    let separator = usize::from(area.width >= 3);
+                    let available = area.width.saturating_sub(separator);
+                    let first_width = available / 2;
+                    let second_width = available - first_width;
+                    let left = self.compose_layout(
+                        first,
+                        super::Rect {
+                            width: first_width,
+                            ..area
+                        },
+                    );
+                    let right = self.compose_layout(
+                        second,
+                        super::Rect {
+                            x: area.x + first_width + separator,
+                            width: second_width,
+                            ..area
+                        },
+                    );
+                    (0..area.height)
+                        .map(|row| {
+                            let mut line = left.get(row).cloned().unwrap_or_default();
+                            if separator > 0 {
+                                line.push('│');
+                            }
+                            line.push_str(right.get(row).map(String::as_str).unwrap_or_default());
+                            line
+                        })
+                        .collect()
+                } else {
+                    let first_height = area.height / 2;
+                    let second_height = area.height - first_height;
+                    let mut rows = self.compose_layout(
+                        first,
+                        super::Rect {
+                            height: first_height,
+                            ..area
+                        },
+                    );
+                    rows.extend(self.compose_layout(
+                        second,
+                        super::Rect {
+                            y: area.y + first_height,
+                            height: second_height,
+                            ..area
+                        },
+                    ));
+                    rows
+                }
+            }
+        }
+    }
+
+    fn render_window(&self, window_id: usize, area: super::Rect) -> Vec<String> {
+        let Some(window) = self.window_by_id(self.active_tab, window_id) else {
+            return vec![" ".repeat(area.width); area.height];
+        };
+        let Some(document) = self.document_by_id(window.buffer_id) else {
+            return vec![" ".repeat(area.width); area.height];
+        };
+        let text_rows = area.height.saturating_sub(1);
+        let mut rows = Vec::with_capacity(area.height);
+        for offset in 0..text_rows {
+            let line = LineNumber::new(window.top_line + offset);
+            let text = document.buffer().line_text(line).unwrap_or_default();
+            rows.push(pad_cells(
+                &render_line(&text, window.left_col, area.width),
+                area.width,
+            ));
+        }
+        if area.height > 0 {
+            let focused = self.tabs[self.active_tab].focus == window_id;
+            let modified = if document.is_modified() { " [+]" } else { "" };
+            let marker = if focused { "*" } else { " " };
+            let status = format!(
+                "{marker}{}{modified} {}:{}",
+                document.display_name(),
+                window.cursor.line.get() + 1,
+                window.cursor.col.get() + 1
+            );
+            rows.push(pad_cells(&render_line(&status, 0, area.width), area.width));
+        }
+        rows
     }
 
     /// Converts the active Visual selection into screen-cell runs for the
@@ -292,8 +453,15 @@ impl Editor {
             Mode::Visual(visual) => match visual.kind {
                 VisualKind::Charwise => "VISUAL",
                 VisualKind::Linewise => "V-LINE",
+                VisualKind::Blockwise { .. } => "V-BLOCK",
+            },
+            Mode::Select(visual) => match visual.kind {
+                VisualKind::Charwise => "SELECT",
+                VisualKind::Linewise => "S-LINE",
+                VisualKind::Blockwise { .. } => "S-BLOCK",
             },
             Mode::Insert => "INSERT",
+            Mode::Replace => "REPLACE",
             Mode::Command => "COMMAND",
             Mode::Search => "SEARCH",
         };
@@ -562,6 +730,15 @@ fn menu_line(icon: &str, label: &str, key: &str, width: usize) -> BannerLine {
 
 fn display_width(text: &str) -> usize {
     line_display_width(text, TABSTOP).get()
+}
+
+fn pad_cells(text: &str, width: usize) -> String {
+    let cells = display_width(text);
+    if cells >= width {
+        text.to_string()
+    } else {
+        format!("{text}{}", " ".repeat(width - cells))
+    }
 }
 
 /// Appends one clamped, non-empty styled span.

@@ -31,6 +31,18 @@ pub struct TextEdit {
 }
 
 impl TextEdit {
+    /// Reconstructs an edit for undo persistence.
+    ///
+    /// The caller must have validated `start`, `removed` and `inserted` against
+    /// the buffer state represented by the surrounding undo snapshot.
+    pub fn from_parts(start: BytePos, removed: String, inserted: String) -> Self {
+        Self {
+            start,
+            removed,
+            inserted,
+        }
+    }
+
     /// Returns the byte offset where the replaced range began.
     pub fn start(&self) -> BytePos {
         self.start

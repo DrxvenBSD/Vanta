@@ -47,7 +47,7 @@ mod line_ending;
 mod units;
 mod width;
 
-pub use buffer::{Buffer, TextEdit};
+pub use buffer::{Buffer, TextEdit, UndoEdit, UndoKind, UndoNode, UndoSnapshot};
 pub use error::TextError;
 pub use grapheme::{
     is_grapheme_boundary, next_grapheme_boundary, prev_grapheme_boundary, snap_to_grapheme_boundary,

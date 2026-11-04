@@ -26,4 +26,5 @@ mod document;
 pub mod editor;
 mod swap;
 pub mod terminal;
+mod undo_file;
 mod view;

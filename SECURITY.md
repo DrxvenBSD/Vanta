@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Vanta is a 0.1 preview. Security reports are accepted against the latest
-commit on `main` and the most recent tagged preview release.
+Vanta is a 0.2 alpha. Security reports are accepted against the latest commit
+on `main` and the most recent tagged preview release.
 
 ## Reporting a vulnerability
 
