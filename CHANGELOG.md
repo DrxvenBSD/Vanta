@@ -4,6 +4,15 @@ All notable changes to Vanta are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Relicensed under MIT alone. `LICENSE-MIT` becomes `LICENSE`, `LICENSE-APACHE`
+  is removed, and `Cargo.toml`, the README, the release archive and the project
+  site now state MIT instead of the MIT OR Apache-2.0 pair. The dependency
+  license allowlist in `AGENTS.md` is unchanged.
+
 ## [0.2.0-alpha.2] - 2026-11-14
 
 ### Changed

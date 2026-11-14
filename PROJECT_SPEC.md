@@ -183,7 +183,7 @@ A 1.0 release is successful when all of the following are true.
 
 - **Form factor:** one executable named `vanta`, plus bundled runtime data (help, themes, queries, default filetype rules) embedded in the binary or installed alongside it. No runtime interpreter, package manager or network service is required.
 - **Platforms:** Linux x86_64/aarch64 (glibc and musl), macOS x86_64/arm64, Windows x86_64 (static CRT). See [[#7. Cross-platform support|§7]].
-- **License:** dual-licensed MIT OR Apache-2.0, consistent with the Rust ecosystem. Bundled tree-sitter grammars and dictionaries retain their own compatible licenses, recorded in `THIRD_PARTY_LICENSES`.
+- **License:** MIT. Bundled tree-sitter grammars and dictionaries retain their own compatible licenses, recorded in `THIRD_PARTY_LICENSES`.
 - **Versioning:** Semantic Versioning for the binary. The Lua API carries an integer version; the UI protocol does the same when it ships in 1.x. A breaking API change requires a major version.
 - **Privacy:** no telemetry, no analytics, no automatic update checks, no network access unless the user configures a feature that requires it (LSP, Git remotes, plugins).
 - **Release artifacts:** reproducible builds where the toolchain permits, checksums, signed tags, and a changelog that separates user-visible changes, compatibility changes and performance changes.

@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml"><img src="https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="rust-toolchain.toml"><img src="https://img.shields.io/badge/rust-1.90%2B-orange.svg" alt="Rust 1.90+"></a>
   <a href="#platform-support"><img src="https://img.shields.io/badge/platform-windows%2011-0078D4.svg" alt="Platform: Windows 11"></a>
 </p>
@@ -373,17 +373,11 @@ those milestones are welcome; read [AGENTS.md](AGENTS.md) first.
 
 ## License
 
-Licensed under either of
+MIT. See [LICENSE](LICENSE).
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
-
-at your option.
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in this project by you, as defined in the Apache-2.0
-license, shall be dual-licensed as above, without any additional terms or
-conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in this project by you shall be licensed as above, without any
+additional terms or conditions.
 
 Vanta has no telemetry, analytics, automatic update checks or hidden network
 access. See [SECURITY.md](SECURITY.md) for private vulnerability reporting.

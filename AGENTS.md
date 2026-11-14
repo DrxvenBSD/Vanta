@@ -504,7 +504,7 @@ vanta.lsp.config("rust", {
 
 ### 13.1 Allowed licenses
 
-Dependencies must be compatible with Vanta's MIT OR Apache-2.0 licensing. The allowlist is enforced by `cargo-deny`:
+Dependencies must be compatible with Vanta's MIT licensing. The allowlist is enforced by `cargo-deny`:
 
 | Allowed | Notes |
 |---|---|

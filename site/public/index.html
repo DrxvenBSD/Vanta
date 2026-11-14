@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanta: a modal terminal editor in Rust</title>
+<meta name="description" content="Vanta is a modal terminal text editor written in Rust: Vim's editing language in one ~950 KB native binary. Cell-level rendering, 1 GiB files, atomic saves, crash recovery.">
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0a0a'/><path d='M8 9l8 15 8-15' stroke='%23f2f2f2' stroke-width='3.2' fill='none' stroke-linejoin='round' stroke-linecap='round'/></svg>">
+<style>
+  :root {
+    /* Surfaces and ink. Every value is neutral: R = G = B. */
+    --bg: #0a0a0a;
+    --panel: #101010;
+    --panel-2: #151515;
+    --line: #2b2b2b;
+    --line-2: #3d3d3d;
+    --text: #f2f2f2;
+    --muted: #b4b4b4;
+    --dim: #8f8f8f;
+
+    /* One spacing scale. All rhythm comes from these. */
+    --s1: 6px;
+    --s2: 10px;
+    --s3: 14px;
+    --s4: 20px;
+    --s5: 28px;
+    --s6: 48px;
+    --s7: 72px;
+    --pad: 16px;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --max: 1040px;
+  }
+  * { box-sizing: border-box; }
+  @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
+  }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line-2); }
+  a:hover { border-bottom-color: var(--text); }
+  code, pre, kbd { font-family: var(--mono); }
+  ::selection { background: var(--text); color: var(--bg); }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--s4); }
+
+  /* Nav: solid, hairline rule, no blur and no translucency. */
+  header.nav {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner { display: flex; align-items: center; gap: var(--s4); height: 58px; }
+  .brand { font: 700 14px/1 var(--mono); letter-spacing: .22em; border: 0; }
+  .brand span { color: var(--dim); }
+  .nav-links { margin-left: auto; display: flex; gap: var(--s5); font: 500 12px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .nav-links a { color: var(--dim); border: 0; }
+  .nav-links a:hover { color: var(--text); }
+  @media (max-width: 760px) { .nav-links { display: none; } }
+
+  .hero {
+    padding: var(--s7) 0 var(--s7);
+    display: grid; grid-template-columns: 1.02fr 1fr; gap: var(--s6); align-items: center;
+  }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding: var(--s6) 0 var(--s6); } }
+  .kicker {
+    display: inline-flex; align-items: center; gap: var(--s2);
+    font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line-2); padding: var(--s1) var(--s2);
+  }
+  .dot { width: 5px; height: 5px; background: var(--text); display: block; }
+  h1 {
+    font: 700 clamp(40px, 6vw, 66px)/1 var(--mono);
+    letter-spacing: -.045em; margin: var(--s5) 0 0;
+  }
+  h1 span { color: var(--dim); }
+  .rule { height: 1px; background: var(--line); margin: var(--s5) 0 var(--s4); max-width: 420px; }
+  .lede { font-size: 17.5px; color: var(--muted); margin: 0; max-width: 44ch; }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  .cta { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s5); }
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s1);
+    border: 1px solid var(--line-2); padding: 11px 18px;
+    font: 600 13px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase;
+    color: var(--text); background: transparent;
+  }
+  .btn:hover { background: var(--panel-2); border-color: var(--text); }
+  .btn.solid { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn.solid:hover { background: #d4d4d4; border-color: #d4d4d4; }
+  .btn small { font-weight: 500; opacity: .65; }
+
+  .term { border: 1px solid var(--line); background: #060606; }
+  .term-bar {
+    display: flex; align-items: center; gap: var(--s1);
+    padding: var(--s2) var(--pad); border-bottom: 1px solid var(--line);
+    font: 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--dim);
+  }
+  .term-bar i { width: 8px; height: 8px; border: 1px solid var(--line-2); display: block; }
+  .term-bar span { margin-left: var(--s1); }
+  .term pre {
+    margin: 0; padding: var(--s4) var(--pad) var(--s3); overflow-x: auto;
+    font-size: 12.5px; line-height: 1.52; color: #dcdcdc;
+  }
+  .term .logo { color: var(--text); }
+  .term .sub { color: #c4c4c4; }
+  .term .dimtxt { color: var(--dim); }
+  .term .k { color: var(--text); }
+  .note { margin: var(--s2) 0 0; font: 12px/1.6 var(--mono); color: var(--dim); }
+
+  section { padding: var(--s7) 0; border-top: 1px solid var(--line); }
+  .sec-head { display: flex; align-items: baseline; gap: var(--pad); flex-wrap: wrap; margin-bottom: var(--s5); }
+  h2, .eyebrow {
+    font: 600 11.5px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase;
+    color: var(--dim); margin: 0;
+  }
+  .sec-head p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line);
+  }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--bg); padding: var(--s4); }
+  .card .num { font: 600 11px/1 var(--mono); letter-spacing: .12em; color: var(--dim); display: block; margin-bottom: var(--s3); }
+  .card h3 { margin: 0 0 var(--s2); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .card code { color: var(--text); font-size: 13px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 12px var(--pad); border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+  td.n { font-family: var(--mono); text-align: right; color: var(--text); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .strong { color: var(--text); font-weight: 600; }
+
+  .two { display: grid; grid-template-columns: 1.1fr 1fr; gap: var(--s5); align-items: start; }
+  @media (max-width: 880px) { .two { grid-template-columns: 1fr; } }
+
+  .panel { border: 1px solid var(--line); background: var(--panel); }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s2);
+    padding: 12px var(--pad); border-bottom: 1px solid var(--line);
+    font: 600 10.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+  }
+  .panel-body { padding: var(--s2) var(--pad) var(--s3); }
+  .copy {
+    background: none; border: 1px solid var(--line-2); color: var(--muted); cursor: pointer;
+    font: 500 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 5px 8px;
+  }
+  .copy:hover { color: var(--text); border-color: var(--text); }
+  pre.cmd { margin: 0; padding: var(--s3) var(--pad); font-size: 12.5px; color: #dcdcdc; overflow-x: auto; }
+  pre.cmd .p { color: var(--dim); user-select: none; }
+  pre.cmd .c { color: var(--dim); }
+
+  .badge {
+    display: inline-block; font: 600 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+    padding: 5px 8px; border: 1px solid var(--line-2); color: var(--muted); white-space: nowrap;
+  }
+  .badge.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  ul.clean { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 14.5px; }
+  ul.clean li { padding: var(--s2) 0; border-bottom: 1px solid var(--line); }
+  ul.clean li:last-child { border-bottom: none; }
+  ul.clean li::before { content: "\00b7"; color: var(--dim); margin-right: var(--s2); }
+  ul.clean code { color: var(--text); font-size: 13px; }
+
+  .platform td:first-child { font-family: var(--mono); font-size: 13px; }
+  .mt { margin-top: var(--s3); }
+
+  footer { border-top: 1px solid var(--line); padding: var(--s5) 0 var(--s6); color: var(--dim); font: 12px/1.7 var(--mono); }
+  .foot-inner { display: flex; gap: var(--pad); flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .foot-links { display: flex; gap: var(--pad); flex-wrap: wrap; }
+  .foot-links a { color: var(--muted); border: 0; }
+  .foot-links a:hover { color: var(--text); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">VANTA<span>/</span></a>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#numbers">Numbers</a>
+      <a href="#keys">Keys</a>
+      <a href="#platform">Platforms</a>
+      <a href="#install">Install</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap">
+    <div class="hero">
+      <div>
+        <span class="kicker"><span class="dot"></span> 0.2.0-alpha.2 · Windows first</span>
+        <h1>Vim's language.<br><span>One binary.</span></h1>
+        <div class="rule"></div>
+        <p class="lede">A modal terminal text editor written in Rust. <b>~950 KB</b>, no runtime,
+          no plugin tree, no startup script. Open a file and edit it.</p>
+        <div class="cta">
+          <a class="btn solid" href="https://github.com/DrxvenBSD/vanta/releases/latest">Download <small>Windows</small></a>
+          <a class="btn" href="https://github.com/DrxvenBSD/vanta">Source</a>
+        </div>
+      </div>
+
+      <div>
+        <div class="term">
+          <div class="term-bar"><i></i><i></i><i></i><span>vanta</span></div>
+<pre><span class="logo">██╗   ██╗ █████╗ ███╗   ██╗████████╗ █████╗
+██║   ██║██╔══██╗████╗  ██║╚══██╔══╝██╔══██╗
+██║   ██║███████║██╔██╗ ██║   ██║   ███████║
+╚██╗ ██╔╝██╔══██║██║╚██╗██║   ██║   ██╔══██║
+ ╚████╔╝ ██║  ██║██║ ╚████║   ██║   ██║  ██║
+  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝   ╚═╝  ╚═╝</span>
+   <span class="sub">[ Vanta 0.2.0-alpha.2 · a modal terminal editor ]</span>
+
+   <span class="dimtxt">▸</span>  Open file                        <span class="k">:e</span>
+   <span class="dimtxt">▸</span>  Insert text                      <span class="k">i</span>
+   <span class="dimtxt">▸</span>  Save as                          <span class="k">:w</span>
+   <span class="dimtxt">▸</span>  Find                             <span class="k">/</span>
+   <span class="dimtxt">▸</span>  Undo                             <span class="k">u</span>
+   <span class="dimtxt">▸</span>  Redo                         <span class="k">Ctrl-r</span>
+   <span class="dimtxt">▸</span>  Quit                             <span class="k">:q</span>
+
+            <span class="k">▸</span>  <span class="sub">Vanta 0.2.0-alpha.2 ready</span>
+
+<span class="dimtxt">NORMAL  1:1  [No Name]</span></pre>
+        </div>
+        <p class="note">The start screen, reproduced from what the editor draws in an empty session.</p>
+      </div>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>01 / What it does</h2>
+        <p>Built as much around not losing your work as around editing fast.</p>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <span class="num">01</span>
+          <h3>Cell-level rendering</h3>
+          <p>The renderer keeps a grid and writes only cells that changed. A cursor move emits no buffer bytes; a one-line scroll uses a scroll region.</p>
+        </div>
+        <div class="card">
+          <span class="num">02</span>
+          <h3>1 GiB files</h3>
+          <p>Large-file mode streams decoding into the rope above 20 MiB. A generated 1 GiB fixture opens in 1.9 s at 1.165× resident memory.</p>
+        </div>
+        <div class="card">
+          <span class="num">03</span>
+          <h3>Saves that cannot truncate</h3>
+          <p>Temp file, fsync, rename over the target, directory fsync. A failed write leaves the original exactly as it was.</p>
+        </div>
+        <div class="card">
+          <span class="num">04</span>
+          <h3>Crash recovery</h3>
+          <p>Checksummed swap files for named and untitled buffers, with stale-writer detection. <code>vanta -r</code> brings the work back.</p>
+        </div>
+        <div class="card">
+          <span class="num">05</span>
+          <h3>A real Vim grammar</h3>
+          <p>Counts, operators, text objects, registers, macros, dot-repeat, Visual Block, Select mode and a persistent undo tree.</p>
+        </div>
+        <div class="card">
+          <span class="num">06</span>
+          <h3>Nothing hidden</h3>
+          <p>No telemetry, no update checks, no network access. MIT licensed. One process, one terminal.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="numbers">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>02 / Measured, not claimed</h2>
+        <p>Windows 11 Pro 26200 · Ryzen 5 5600X · 16 GB · ConPTY 80×24 · <code>cargo xtask perf</code></p>
+      </div>
+      <div class="panel">
+        <table>
+          <thead><tr><th>Metric</th><th>Measured</th><th>Budget</th><th>Headroom</th></tr></thead>
+          <tbody>
+            <tr><td>1 GiB file to first editable frame</td><td class="n">1,895 ms</td><td class="n">8,000 ms</td><td class="n strong">4.2×</td></tr>
+            <tr><td>Resident memory after that open</td><td class="n">1.25 GB</td><td class="n">2.5× file</td><td class="n strong">2.1×</td></tr>
+            <tr><td>1,000 Insert-mode edits</td><td class="n">706 ms</td><td class="n">n/a</td><td class="n">n/a</td></tr>
+            <tr><td>One-line scroll frame</td><td class="n">1,871 B</td><td class="n">2,048 B</td><td class="n strong">11%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">The scroll figure is a real-binary ceiling on ConPTY, which repaints the text area; the direct backend output is smaller and covered by unit tests.</p>
+    </div>
+  </section>
+
+  <section id="keys">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>03 / The keys you already know</h2>
+        <p>The motions you have, plus the pieces that make them compose.</p>
+      </div>
+      <div class="two">
+        <div class="panel">
+          <div class="panel-head"><span>Normal mode</span></div>
+          <table>
+            <tbody>
+              <tr><td><code>ciw</code> · <code>dap</code> · <code>yi"</code></td><td>Operators over text objects</td></tr>
+              <tr><td><code>3dd</code> · <code>d2w</code> · <code>y$</code></td><td>Counts over motions</td></tr>
+              <tr><td><code>Vj</code> · <code>Ctrl-v</code> block</td><td>Visual line, block and character</td></tr>
+              <tr><td><code>qa</code> … <code>q</code> · <code>@a</code></td><td>Macros and replay</td></tr>
+              <tr><td><code>u</code> · <code>Ctrl-r</code> · <code>g-</code></td><td>Undo tree travel</td></tr>
+              <tr><td><code>:sp</code> · <code>:tabnew</code> · <code>gt</code></td><td>Splits and tab pages</td></tr>
+              <tr><td><code>/pattern</code> · <code>n</code></td><td>Literal search with match highlight</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="panel-head"><span>Install from source</span><button class="copy" data-copy="cargo install --path crates/vanta --locked">copy</button></div>
+            <pre class="cmd"><span class="p">$ </span>git clone https://github.com/DrxvenBSD/vanta.git
+<span class="p">$ </span>cd vanta
+<span class="p">$ </span>cargo install --path crates/vanta --locked</pre>
+          </div>
+          <div class="panel mt">
+            <div class="panel-head"><span>Recover after a crash</span></div>
+            <pre class="cmd"><span class="p">$ </span>vanta -r            <span class="c"># newest untitled swap</span>
+<span class="p">$ </span>vanta -r notes.md   <span class="c"># a named file's swap</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="platform">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>04 / Platform support</h2>
+        <p>Stated as it is, not as it is hoped to be.</p>
+      </div>
+      <div class="panel platform">
+        <table>
+          <thead><tr><th>Target</th><th>State</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Windows 11 x86_64</td>
+              <td><span class="badge on">Supported</span></td>
+              <td>250 tests including real-binary PTY tests, green in CI. Prebuilt archive published on every tag.</td>
+            </tr>
+            <tr>
+              <td>Linux x86_64</td>
+              <td><span class="badge">Builds</span></td>
+              <td>Compiles and runs the suite in CI; three save-status tests still fail, so no archive is published.</td>
+            </tr>
+            <tr>
+              <td>macOS arm64 / x86_64</td>
+              <td><span class="badge">Builds</span></td>
+              <td>Compiles and runs the suite in CI; untitled swap recovery still fails, so no archive is published.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2>05 / Install</h2>
+        <p>One binary on your <code>PATH</code>. Rust 1.90+ only if you build it yourself.</p>
+      </div>
+      <div class="two">
+        <div>
+          <div class="panel">
+            <div class="panel-head"><span>Windows · prebuilt</span></div>
+            <pre class="cmd">Get-FileHash .\vanta-*.tar.gz -Algorithm SHA256
+tar -xzf vanta-0.2.0-alpha.2-x86_64-pc-windows-msvc.tar.gz</pre>
+          </div>
+          <p class="note">Every release ships <code>SHA256SUMS.txt</code>. Archives are unsigned for now.</p>
+          <div class="cta">
+            <a class="btn solid" href="https://github.com/DrxvenBSD/vanta/releases/latest">Latest release</a>
+            <a class="btn" href="https://github.com/DrxvenBSD/vanta/blob/main/CHANGELOG.md">Changelog</a>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="panel-head"><span>What is not there yet</span></div>
+            <div class="panel-body">
+              <ul class="clean">
+                <li>No configuration file, Lua API or plugins.</li>
+                <li>No syntax highlighting, LSP, Git or picker.</li>
+                <li>No <code>:map</code>/<code>:nmap</code> mapping engine yet.</li>
+                <li>Search is literal: no regex, <code>:s</code> or <code>:g</code>.</li>
+                <li>No marks, jumplist, changelist or quickfix.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div>MIT · NO TELEMETRY · NO NETWORK ACCESS</div>
+    <nav class="foot-links">
+      <a href="https://github.com/DrxvenBSD/vanta">GitHub</a>
+      <a href="https://github.com/DrxvenBSD/vanta/blob/main/README.md">README</a>
+      <a href="https://github.com/DrxvenBSD/vanta/blob/main/ARCHITECTURE.md">Architecture</a>
+      <a href="https://github.com/DrxvenBSD/vanta/blob/main/SECURITY.md">Security</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  for (const button of document.querySelectorAll('.copy')) {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy);
+        const previous = button.textContent;
+        button.textContent = 'copied';
+        setTimeout(() => { button.textContent = previous; }, 1400);
+      } catch {
+        button.textContent = 'select it';
+      }
+    });
+  }
+</script>
+</body>
+</html>

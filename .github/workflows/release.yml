@@ -41,7 +41,7 @@ jobs:
           if [ -f "${bin}.exe" ]; then bin="${bin}.exe"; fi
           mkdir -p dist
           cp "$bin" dist/
-          cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE dist/
+          cp README.md CHANGELOG.md LICENSE dist/
           tar -czf "vanta-${version}-${target}.tar.gz" -C dist .
       - uses: actions/upload-artifact@v4
         with:
