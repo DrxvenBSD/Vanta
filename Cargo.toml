@@ -7,8 +7,8 @@ version = "0.2.0-alpha.1"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/vanta-editor/vanta"
-homepage = "https://github.com/vanta-editor/vanta"
+repository = "https://github.com/DrxvenBSD/vanta"
+homepage = "https://github.com/DrxvenBSD/vanta"
 
 [workspace.dependencies]
 crossterm = "0.29"

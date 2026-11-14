@@ -1,6 +1,6 @@
 # Vanta
 
-[![CI](https://github.com/vanta-editor/vanta/actions/workflows/ci.yml/badge.svg)](https://github.com/vanta-editor/vanta/actions/workflows/ci.yml)
+[![CI](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml/badge.svg)](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml)
 
 Vanta is a modal terminal text editor written in Rust. It brings Vim's editing
 language to a single native binary built for low latency, low memory use and
@@ -18,7 +18,7 @@ and gates G1-G5 pass.
 ## Try it in two minutes
 
 ```sh
-git clone https://github.com/vanta-editor/vanta.git
+git clone https://github.com/DrxvenBSD/vanta.git
 cd vanta
 cargo run --release -p vanta -- README.md
 ```
@@ -107,7 +107,7 @@ Rust 1.90 or newer is required; the workspace pins 1.94.0 in
 `rust-toolchain.toml`.
 
 ```sh
-git clone https://github.com/vanta-editor/vanta.git
+git clone https://github.com/DrxvenBSD/vanta.git
 cd vanta
 cargo build --release -p vanta
 ./target/release/vanta --version

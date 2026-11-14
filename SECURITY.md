@@ -8,7 +8,7 @@ on `main` and the most recent tagged preview release.
 ## Reporting a vulnerability
 
 Report vulnerabilities privately through GitHub Security Advisories:
-<https://github.com/vanta-editor/vanta/security/advisories/new>. Do not open a
+<https://github.com/DrxvenBSD/vanta/security/advisories/new>. Do not open a
 public issue for an unpatched vulnerability.
 
 Include the affected version or commit, the platform and terminal, a
