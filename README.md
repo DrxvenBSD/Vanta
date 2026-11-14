@@ -1,12 +1,17 @@
-# Vanta
+<h1 align="center">Vanta</h1>
 
-[![CI](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml/badge.svg)](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange.svg)](rust-toolchain.toml)
-[![Windows 11 supported](https://img.shields.io/badge/platform-windows%2011-0078D4.svg)](#platform-support)
+<p align="center">
+  <b>Vim's editing language in one ~950 KB native binary.</b><br>
+  No plugin tree. No runtime to install. No startup script.<br>
+  <code>vanta file.rs</code> and you are editing.
+</p>
 
-**Vim's editing language in one ~950 KB native binary.** No plugin tree, no
-runtime to install, no startup script: `vanta file.rs`, and you are editing.
+<p align="center">
+  <a href="https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml"><img src="https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg" alt="License: MIT OR Apache-2.0"></a>
+  <a href="rust-toolchain.toml"><img src="https://img.shields.io/badge/rust-1.90%2B-orange.svg" alt="Rust 1.90+"></a>
+  <a href="#platform-support"><img src="https://img.shields.io/badge/platform-windows%2011-0078D4.svg" alt="Platform: Windows 11"></a>
+</p>
 
 Vanta is a modal terminal text editor written in Rust. It aims at Vim 9.2
 semantics, uses Neovim as its differential test oracle, and treats keyboard
@@ -28,7 +33,23 @@ arrives only after the spec's P0/P1 requirements and gates G1-G5 pass.
 | Linux x86_64, macOS arm64/x86_64 | **Builds, not supported yet.** CI compiles them and runs the suite as an experimental job; the save-status tests fail on Linux and untitled swap recovery fails on macOS, so no archives are published. |
 | Everything else | Untested. |
 
-### Why another editor
+<details open>
+<summary><b>Contents</b></summary>
+
+- [Why another editor](#why-another-editor)
+- [What works today](#what-works-today)
+- [Install](#install)
+- [Usage](#usage)
+- [Crash recovery](#crash-recovery)
+- [Build and test](#build-and-test)
+- [Repository layout](#repository-layout)
+- [Limitations](#limitations)
+- [Roadmap to 1.0](#roadmap-to-10)
+- [License](#license)
+
+</details>
+
+## Why another editor
 
 - **One process, one binary.** 949 KB release build, no runtime, no plugin host
   to keep alive.
@@ -248,24 +269,23 @@ binary: save, undo/redo, Visual selections, search, horizontal scrolling,
 cell-only cursor motion, one-line scrolling, kill-and-recover, and terminal
 restoration on panic. `cargo xtask check` is the same gate CI runs.
 
-The one-line scroll PTY test uses a 120-line file in an 80x24 terminal, moves
-to the last visible text row and scrolls once with `j`. It caps the emitted
-frame at 2,048 ANSI bytes. Windows 11 ConPTY measured 1,871 bytes for that
-frame, leaving 208 bytes (about 11%) of headroom. The direct backend output is
-smaller: a `Screen` unit test asserts the text-area scroll-region sequence, no
-full-screen clear and no repaint of unchanged rows. ConPTY consumes the scroll
-sequence and re-renders the 23-row text area, so 2,048 is a regression ceiling
-for the observed host behavior, not a claim that the host emits only the cells
-Vanta diffed.
+### Measured budgets
 
-`cargo xtask perf` builds the release binary and runs the ignored G1 harness. It
-generates a 1 GiB fixture at run time, opens it through the real binary in an
-80x24 ConPTY, performs 1,000 Insert-mode edits, scrolls one line, samples RSS,
-and removes the fixture. The recorded Windows 11 run measured **1,894.870 ms**
-to the first editable frame (8 s budget), **1,250,660,352 bytes RSS** (1.165x
-the file; 2.5x budget), 705.801 ms for the 1,000 edits, and a **1,871-byte**
-scroll frame. Host: Windows 11 Pro 26200, AMD Ryzen 5 5600X, 16,306 MB RAM,
-ConPTY at 80x24 with `TERM=xterm-256color`.
+Recorded with `cargo xtask perf` on Windows 11 Pro 26200, AMD Ryzen 5 5600X,
+16,306 MB RAM, ConPTY at 80x24 with `TERM=xterm-256color`.
+
+| Metric | Measured | Budget | Headroom |
+|---|---:|---:|---:|
+| 1 GiB file → first editable frame | **1,895 ms** | 8,000 ms | 4.2x |
+| Resident memory after that open | **1.25 GB** (1.165x file) | 2.5x file | 2.1x |
+| 1,000 Insert-mode edits | **706 ms** | — | — |
+| One-line scroll frame | **1,871 B** | 2,048 B | 11% |
+
+The scroll number is a real-binary ceiling, not a claim that the host emits only
+the cells Vanta diffed: ConPTY consumes the scroll-region sequence and repaints
+the 23-row text area. The direct backend output is smaller, and a `Screen` unit
+test asserts the scroll-region sequence with no full clear and no repaint of
+unchanged rows.
 
 ## Repository layout
 
@@ -276,8 +296,10 @@ ConPTY at 80x24 with `TERM=xterm-256color`.
 | `crates/vanta-fs` | Atomic save and backup transactions |
 | `xtask` | Developer task runner |
 | `PROJECT_SPEC.md` | Behavioral specification, requirements and release gates |
+| `ARCHITECTURE.md` | Runtime flow, state ownership and testing seams |
 | `AGENTS.md` | Workflow, architecture and quality rules |
 | `CHANGELOG.md` | User-visible changes |
+| `SECURITY.md` | Private vulnerability reporting |
 
 ## Limitations
 

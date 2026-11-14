@@ -8,6 +8,9 @@ All notable changes to Vanta are recorded here. The format follows
 
 ### Changed
 
+- Repository housekeeping: the internal working notes (`knowledge.md`,
+  `ROADMAP.md`) are gone, and the README now carries the platform state,
+  measured budgets and roadmap that used to be split between them.
 - Version metadata moved to `0.2.0-alpha.2`, the Windows-first 0.2 preview.
 - Windows 11 x86_64 is the supported platform. CI keeps a blocking Windows job
   and an experimental Linux/macOS job that is allowed to fail while three
