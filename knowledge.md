@@ -6,7 +6,7 @@ Vanta is a modal terminal text editor written in Rust. It targets Vim 9.2
 editing behavior, uses Neovim 0.12.6 as the differential test oracle, and ships
 as a single native binary.
 
-The current version is `0.2.0-alpha.1`. It has real buffers, splits, tabs, a
+The current version is `0.2.0-alpha.2`. It has real buffers, splits, tabs, a
 substantial Vim grammar, registers, macros, persistent undo and block/Select
 editing. It is not 1.0 yet. Version 1.0 requires the P0/P1 requirements and
 gates G1-G5 in `PROJECT_SPEC.md`.

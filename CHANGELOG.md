@@ -4,11 +4,18 @@ All notable changes to Vanta are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [0.2.0-alpha.2] - 2026-11-14
 
 ### Changed
 
-- Version metadata moved to `0.2.0-alpha.1` for the G2 editor-surface alpha.
+- Version metadata moved to `0.2.0-alpha.2`, the Windows-first 0.2 preview.
+- Windows 11 x86_64 is the supported platform. CI keeps a blocking Windows job
+  and an experimental Linux/macOS job that is allowed to fail while three
+  save-status tests (Linux) and untitled swap recovery (macOS) are unfixed, and
+  the release workflow publishes Windows archives only until they pass. The
+  suppression is recorded here with its removal condition: delete
+  `continue-on-error` and restore the Unix release targets once those tests
+  pass.
 
 ### Fixed
 
@@ -245,5 +252,5 @@ All notable changes to Vanta are recorded here. The format follows
   open. Real-binary scroll frames on Windows ConPTY are capped at 2,048 bytes
   (1,871 measured) because ConPTY repaints the text area; the direct backend
   output is smaller and covered by `Screen` unit tests.
-- The workspace version is `0.2.0-alpha.1`. A `1.0` release waits for the
+- The workspace version is `0.2.0-alpha.2`. A `1.0` release waits for the
   P0/P1 requirements and gates G1-G5 in `PROJECT_SPEC.md` section 10.

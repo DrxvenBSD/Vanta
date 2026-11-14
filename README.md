@@ -1,19 +1,47 @@
 # Vanta
 
 [![CI](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml/badge.svg)](https://github.com/DrxvenBSD/vanta/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Rust 1.90+](https://img.shields.io/badge/rust-1.90%2B-orange.svg)](rust-toolchain.toml)
+[![Windows 11 supported](https://img.shields.io/badge/platform-windows%2011-0078D4.svg)](#platform-support)
 
-Vanta is a modal terminal text editor written in Rust. It brings Vim's editing
-language to a single native binary built for low latency, low memory use and
-predictable behavior, with the development tooling users normally assemble from
-plugins planned as first-party modules.
+**Vim's editing language in one ~950 KB native binary.** No plugin tree, no
+runtime to install, no startup script: `vanta file.rs`, and you are editing.
 
-**Status: 0.2.0-alpha.1.** Vanta is a real modal editor with multiple buffers,
-split windows, tab pages, a substantial Vim grammar, blockwise Visual editing,
-Select mode, persistent undo, macros and dot-repeat. It is still an alpha, not
-the 1.0 release described in [PROJECT_SPEC.md](PROJECT_SPEC.md): configuration,
-syntax highlighting, LSP, Git integration and plugins are not implemented yet.
-A release will carry the `1.0` version only after the spec's P0/P1 requirements
-and gates G1-G5 pass.
+Vanta is a modal terminal text editor written in Rust. It aims at Vim 9.2
+semantics, uses Neovim as its differential test oracle, and treats keyboard
+latency, memory use and predictable behavior as features with budgets rather
+than afterthoughts. The tooling people normally assemble from plugins — syntax,
+LSP, Git, a picker, a plugin runtime — is planned as first-party modules instead
+of a compatibility shim.
+
+**Status: 0.2.0-alpha.2 — Windows 11 first.** A real modal editor with multiple
+buffers, split windows, tab pages, a substantial Vim grammar, blockwise Visual
+editing, Select mode, persistent undo, macros and dot-repeat. Not the 1.0
+release described in [PROJECT_SPEC.md](PROJECT_SPEC.md): configuration, syntax
+highlighting, LSP, Git and plugins are not implemented yet. The `1.0` version
+arrives only after the spec's P0/P1 requirements and gates G1-G5 pass.
+
+| Platform | State |
+|---|---|
+| Windows 11 x86_64 | **Supported.** The full 250-test suite and the real-binary PTY tests pass locally and in CI. |
+| Linux x86_64, macOS arm64/x86_64 | **Builds, not supported yet.** CI compiles them and runs the suite as an experimental job; the save-status tests fail on Linux and untitled swap recovery fails on macOS, so no archives are published. |
+| Everything else | Untested. |
+
+### Why another editor
+
+- **One process, one binary.** 949 KB release build, no runtime, no plugin host
+  to keep alive.
+- **Cell-level rendering.** The renderer keeps a grid and writes only the cells
+  that changed; a cursor move emits no buffer bytes and a one-line scroll uses a
+  scroll region. Measured: 1,871 bytes for that scroll frame on ConPTY.
+- **1 GiB files.** `cargo xtask perf` opens a generated 1 GiB file in 1.895 s
+  (8 s budget) at 1.165x RSS (2.5x budget), then edits and scrolls it.
+- **Saves that do not corrupt data.** Temporary file, fsync, rename over the
+  target, directory fsync — the original survives a failed write.
+- **Crash recovery that refuses to lose work.** Checksummed swaps for named and
+    untitled buffers, plus a quit guard that will not drop a modified buffer in
+  the background.
 
 ## Try it in two minutes
 
@@ -81,25 +109,27 @@ cargo run --release -p vanta -- README.md
   back independently when a capability is absent.
 - A panic-safe terminal session: raw mode, the alternate screen and the cursor
   are restored on normal exit, early errors and panic.
-- Windows 11 is the verified platform. Linux and macOS CI is configured in
-  this repository but has not run yet.
+- Windows 11 x86_64 is the supported platform: the whole suite and the
+  real-binary PTY tests pass locally and on the CI job. Linux and macOS compile
+  and are built by CI, but stay experimental — see
+  [Platform support](#platform-support).
 
 ## Install
 
-### Prebuilt archives
+### Windows: prebuilt archive
 
-Tagged releases publish `vanta-<version>-<target>.tar.gz` archives for Windows
-x86_64, Linux x86_64 and macOS x86_64/arm64, together with `SHA256SUMS.txt`.
-Extract the archive, verify the checksum, and put `vanta` (or `vanta.exe`) on
-your `PATH`.
+Tagged releases publish `vanta-<version>-x86_64-pc-windows-msvc.tar.gz` with a
+`SHA256SUMS.txt`. Extract it, check the hash and put `vanta.exe` on your `PATH`.
 
-```sh
-sha256sum -c SHA256SUMS.txt   # macOS: shasum -a 256 -c SHA256SUMS.txt
-tar -xzf vanta-<version>-x86_64-unknown-linux-gnu.tar.gz
-install -m 755 vanta ~/.local/bin/
+```powershell
+Get-FileHash .\vanta-*.tar.gz -Algorithm SHA256
+tar -xzf vanta-<version>-x86_64-pc-windows-msvc.tar.gz
 ```
 
-Archives are unsigned; signatures are not yet produced.
+Archives are unsigned; signatures are not yet produced. Linux and macOS archives
+are not published until their save and recovery paths pass the suite. Until
+then, build them from source — they compile and mostly work, but see
+[Platform support](#platform-support) before you trust them with work.
 
 ### From source
 
@@ -273,14 +303,16 @@ This is a 0.2 alpha, not yet a daily-driver Vim replacement.
   attached terminal with crossterm; it does not parse XTGETTCAP or terminfo,
   and truecolor still has environment hints for terminals that under-report
   their color count. The real-binary scroll ceiling is set by ConPTY's
-  text-area repaint rather than Vanta's direct cell output. Three-platform CI
-  has not run on GitHub yet.
+  text-area repaint rather than Vanta's direct cell output.
 - Large-file mode activates at 20 MiB and opens through a chunked decoder; the
   1 GiB BUF-012 fixture is generated by `cargo xtask perf` and opens in 1.895 s
   on the recorded host; saving still builds the encoded output in memory.
   External-change detection and symlink-aware saves are not implemented.
-- Cross-platform behavior is not yet evidenced. Windows 11 has the full local
-  test run; the Linux/macOS workflow definitions have not completed on GitHub.
+- Cross-platform behavior is only partly evidenced. Windows 11 passes the
+  whole suite in CI. The Linux and macOS jobs compile, but three save-status
+  tests fail on Linux and untitled swap recovery fails on macOS (`E305`), so
+  those platforms are experimental and publish no archives. Fixing them is the
+  next cross-platform milestone.
 
 ## Roadmap to 1.0
 
@@ -289,7 +321,7 @@ are ordered by dependency and cannot be waived because code exists.
 
 | Milestone | Outcome | State |
 |---|---|---|
-| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Passed on Windows 11 evidence: text engine, atomic save, backups, swap recovery, encoding, 20 MiB large-file mode, active capability detection and cell-level rendering exist. The 1 GiB harness measured 1.895 s first frame and 1.165x RSS against 8 s and 2.5x budgets; one-line scroll is 1,871 bytes against 2,048. Three-platform CI still needs a green GitHub run. |
+| 1 | Core foundation: renderer, rope, file I/O, recovery, CI | Passed on Windows 11 evidence: text engine, atomic save, backups, swap recovery, encoding, 20 MiB large-file mode, active capability detection and cell-level rendering exist. The 1 GiB harness measured 1.895 s first frame and 1.165x RSS against 8 s and 2.5x budgets; one-line scroll is 1,871 bytes against 2,048. Windows CI runs green on GitHub; the Linux/macOS jobs are experimental and still fail three save-status tests and macOS untitled recovery. |
 | 2 | Vim grammar: motions, operators, text objects, registers, macros, undo tree, windows, buffers, tabs | Large slice implemented and green: counted grammar, text objects, registers, macros, dot-repeat, persistent undo tree, Visual Block, Select, buffers, splits and tabs. Gate remains open for mappings, key protocols, marks/jumplist/changelist/quickfix and the 500-case differential corpus. |
 | 3 | Search, typed Lua configuration, tree-sitter syntax | Not started. |
 | 4 | Modules, LSP, Git, picker, terminal and plugin runtime | Not started. |

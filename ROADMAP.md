@@ -1,6 +1,7 @@
 # Roadmap
 
-Current release: `0.2.0-alpha.1` (2026-11-04). Current milestone: close G2.
+Current release: `0.2.0-alpha.2` (2026-11-14), Windows-first. Current
+milestone: close G2.
 The 1.0 contract is `PROJECT_SPEC.md` section 10. A milestone is not done
 because code exists; its exit gate must pass.
 
