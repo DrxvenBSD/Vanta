@@ -12,6 +12,10 @@ All notable changes to Vanta are recorded here. The format follows
 
 ### Fixed
 
+- The workspace now compiles on Linux and macOS. The terminal capability probe
+  called `crossterm::ansi_support`, which crossterm 0.29 only ships for
+  Windows, and two `std::process::Command` imports were unused on the platforms
+  whose liveness and RSS probes read `/proc`. Windows behavior is unchanged.
 - Quitting, `:x`, `:wq` and `ZZ` no longer discard unsaved text from a buffer
   that is not the focused one, and `:tabclose` refuses to close a tab whose
   loaded buffer is modified. The refusal names the dirty background buffer with

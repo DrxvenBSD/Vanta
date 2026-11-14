@@ -65,10 +65,30 @@ impl TerminalProfile {
         }
         Self {
             is_terminal,
-            supports_ansi: crossterm::ansi_support::supports_ansi(),
+            supports_ansi: ansi_support(),
             color_count: crossterm::style::available_color_count(),
         }
     }
+}
+
+/// Whether the attached console advertises ANSI sequence support.
+///
+/// crossterm 0.29 only ships this probe for the Windows console API, so the
+/// call site is behind a platform function instead of a `cfg` branch in the
+/// detection logic.
+#[cfg(windows)]
+fn ansi_support() -> bool {
+    crossterm::ansi_support::supports_ansi()
+}
+
+/// Whether the attached console advertises ANSI sequence support.
+///
+/// A Unix process that reached `detect` is already known to own a TTY, and
+/// `TERM=dumb` and `NO_COLOR` are resolved by `from_profile`, so there is no
+/// platform-specific advertisement to query.
+#[cfg(not(windows))]
+fn ansi_support() -> bool {
+    true
 }
 
 impl Capabilities {

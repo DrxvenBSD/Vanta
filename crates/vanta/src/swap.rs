@@ -36,6 +36,9 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+// Linux reads `/proc` instead of spawning a process, so the import is only
+// needed where the `tasklist` or `ps` probe is compiled in.
+#[cfg(any(windows, all(unix, not(target_os = "linux"))))]
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};

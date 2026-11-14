@@ -15,6 +15,8 @@
 use std::fs::{self, File};
 use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+// Only the Windows and macOS RSS probes spawn a process; Linux reads /proc.
+#[cfg(any(windows, target_os = "macos"))]
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
