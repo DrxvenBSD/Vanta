@@ -10,6 +10,15 @@ All notable changes to Vanta are recorded here. The format follows
 
 - Version metadata moved to `0.2.0-alpha.1` for the G2 editor-surface alpha.
 
+### Fixed
+
+- Quitting, `:x`, `:wq` and `ZZ` no longer discard unsaved text from a buffer
+  that is not the focused one, and `:tabclose` refuses to close a tab whose
+  loaded buffer is modified. The refusal names the dirty background buffer with
+  `E162`; `:q!` and `ZQ` still discard on purpose. Requirement: BUF-003.
+- `ZQ` quits without writing, as Vim does, instead of refusing when the buffer
+  is modified. Requirement: BUF-003.
+
 ## [0.2.0-alpha.1] - 2026-11-04
 
 ### Added

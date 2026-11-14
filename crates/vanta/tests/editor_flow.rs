@@ -626,6 +626,112 @@ fn quit_refuses_to_discard_unsaved_changes() {
 }
 
 #[test]
+fn write_and_quit_refuses_when_a_background_buffer_is_modified() {
+    let directory = scratch();
+    let background = directory.join("background.txt");
+    let foreground = directory.join("foreground.txt");
+    fs::write(&background, "a\n").expect("seed background file");
+    fs::write(&foreground, "b\n").expect("seed foreground file");
+
+    let mut editor = Editor::open(&background).expect("open background file");
+    let mut terminal = ScriptedTerminal::new(
+        [
+            vec![
+                InputEvent::Char('i'),
+                InputEvent::Char('X'),
+                InputEvent::Esc,
+            ],
+            command(&format!("tabnew \"{}\"", foreground.display())),
+            vec![
+                InputEvent::Char('i'),
+                InputEvent::Char('Y'),
+                InputEvent::Esc,
+            ],
+            command("x"),
+            command("q!"),
+            command("q!"),
+        ]
+        .concat(),
+    );
+
+    editor.run(&mut terminal).expect("run editor");
+
+    assert_eq!(
+        fs::read_to_string(&foreground).expect("read foreground file"),
+        "Yb\n",
+        "`:x` must still save the focused buffer"
+    );
+    assert_eq!(
+        fs::read_to_string(&background).expect("read background file"),
+        "a\n",
+        "the refused write-and-quit must not touch the background buffer"
+    );
+    assert!(
+        terminal.frames.iter().any(|frame| {
+            frame
+                .rows
+                .last()
+                .is_some_and(|row| row.contains("E162") && row.contains("background.txt"))
+        }),
+        "the refusal must name the background buffer that still has unsaved text"
+    );
+
+    fs::remove_dir_all(&directory).expect("clean scratch directory");
+}
+
+#[test]
+fn tab_close_refuses_to_discard_a_modified_buffer() {
+    let directory = scratch();
+    let kept = directory.join("tab-kept.txt");
+    let closing = directory.join("tab-closing.txt");
+    fs::write(&kept, "a\n").expect("seed kept file");
+    fs::write(&closing, "b\n").expect("seed closing file");
+
+    let mut editor = Editor::open(&kept).expect("open kept file");
+    let mut terminal = ScriptedTerminal::new(
+        [
+            command(&format!("tabnew \"{}\"", closing.display())),
+            vec![
+                InputEvent::Char('i'),
+                InputEvent::Char('Y'),
+                InputEvent::Esc,
+            ],
+            command("tabclose"),
+            command("q!"),
+            command("q"),
+            command("q!"),
+        ]
+        .concat(),
+    );
+
+    editor.run(&mut terminal).expect("run editor");
+
+    assert_eq!(
+        fs::read_to_string(&closing).expect("read closing file"),
+        "b\n",
+        "a refused tab close must not write or discard the buffer"
+    );
+    assert!(
+        terminal
+            .frames
+            .iter()
+            .any(|frame| { frame.rows.last().is_some_and(|row| row.contains("E37")) }),
+        "closing a tab with unsaved text must be refused in the status row"
+    );
+    assert!(
+        terminal.frames.iter().any(|frame| {
+            frame
+                .rows
+                .last()
+                .is_some_and(|row| row.contains("E162") && row.contains("tab-closing.txt"))
+        }),
+        "the hidden tab buffer must still block a later quit by name"
+    );
+
+    fs::remove_dir_all(&directory).expect("clean scratch directory");
+}
+
+#[test]
 fn linewise_yank_and_put_round_trip() {
     let directory = scratch();
     let path = directory.join("linewise-put.txt");

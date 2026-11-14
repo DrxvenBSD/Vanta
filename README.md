@@ -1,5 +1,7 @@
 # Vanta
 
+[![CI](https://github.com/vanta-editor/vanta/actions/workflows/ci.yml/badge.svg)](https://github.com/vanta-editor/vanta/actions/workflows/ci.yml)
+
 Vanta is a modal terminal text editor written in Rust. It brings Vim's editing
 language to a single native binary built for low latency, low memory use and
 predictable behavior, with the development tooling users normally assemble from
@@ -12,6 +14,24 @@ the 1.0 release described in [PROJECT_SPEC.md](PROJECT_SPEC.md): configuration,
 syntax highlighting, LSP, Git integration and plugins are not implemented yet.
 A release will carry the `1.0` version only after the spec's P0/P1 requirements
 and gates G1-G5 pass.
+
+## Try it in two minutes
+
+```sh
+git clone https://github.com/vanta-editor/vanta.git
+cd vanta
+cargo run --release -p vanta -- README.md
+```
+
+| Keys | What it shows |
+|---|---|
+| `ciw` then type | change a word through a text object |
+| `yy` `p` | linewise register round trip |
+| `Vjd` | linewise Visual delete |
+| `:sp` then `Ctrl-w` `l` | split windows with directional focus |
+| `u` `Ctrl-r` `g-` | undo-tree travel |
+| `/crate` `n` | literal search with live highlights |
+| `:wq` | atomic save and quit |
 
 ## What works today
 
@@ -131,7 +151,7 @@ Exit codes: `0` success, `1` startup/runtime error, `2` invalid arguments.
 | Normal | `gt`, `gT` | Next/previous tab page |
 | Normal | `/`, `?`, `n`, `N`, `*`, `#` | Search forward/backward and repeat |
 | Normal | `:` | Enter a command |
-| Visual | motions, `d`/`x`, `y`, `c`, `I`, `A`, `$`, `p`, `Esc` | Extend or operate on the selection |
+| Visual | motions, `d`/`x`, `y`, `c`, `I`, `A`, `$`, `Esc` | Extend or operate on the selection |
 | Insert | text, `Backspace`, `Enter`, `Esc` | Edit and return to Normal mode |
 
 ### Commands
@@ -191,7 +211,7 @@ cargo test --workspace
 cargo build --release -p vanta
 ```
 
-The suite currently contains 248 tests plus one ignored 1 GiB performance test,
+The suite currently contains 250 tests plus one ignored 1 GiB performance test,
 including headless editor-loop tests, 13 end-to-end editor-surface tests for
 buffers, splits, tabs, Visual Block and Select, and PTY tests that run the real
 binary: save, undo/redo, Visual selections, search, horizontal scrolling,

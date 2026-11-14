@@ -149,6 +149,9 @@ struct TabPage {
     layout: Layout,
 }
 
+/// Vim's refusal message for unsaved changes in the focused buffer.
+const E37: &str = "E37: No write since last change (add ! to override)";
+
 /// A document that is open but not currently active.
 #[derive(Debug)]
 struct BufferEntry {
@@ -527,16 +530,32 @@ impl Editor {
         Ok(())
     }
 
+    /// Closes the focused window, or quits when it is the last one.
+    ///
+    /// `force` (`:q!`, `ZQ`) discards changes. Otherwise the close is refused
+    /// when it would drop unsaved text: the focused buffer for a window close,
+    /// and every loaded buffer when the close quits the editor (`BUF-003`).
     fn close_focused_window(&mut self, force: bool) -> Result<(), EditorError> {
-        if !force && self.document.is_modified() {
-            self.message = Some("E37: No write since last change (add ! to override)".to_string());
-            return Ok(());
+        if !force {
+            let quits_editor =
+                self.tabs[self.active_tab].windows.len() <= 1 && self.tabs.len() <= 1;
+            let blocked = if quits_editor {
+                self.unsaved_changes_message()
+            } else if self.document.is_modified() {
+                Some(E37.to_string())
+            } else {
+                None
+            };
+            if let Some(message) = blocked {
+                self.message = Some(message);
+                return Ok(());
+            }
         }
         self.save_focus_cursor();
         let tab = &mut self.tabs[self.active_tab];
         if tab.windows.len() <= 1 {
             if self.tabs.len() > 1 {
-                return self.close_tab();
+                return self.close_tab(force);
             }
             self.should_quit = true;
             return Ok(());
@@ -552,10 +571,25 @@ impl Editor {
         self.activate_buffer(buffer_id, cursor)
     }
 
-    fn close_tab(&mut self) -> Result<(), EditorError> {
+    /// Closes the active tab page without discarding unsaved text.
+    ///
+    /// `force` comes from `:q!`, which discards the tab's changes the way Vim
+    /// does (`BUF-003`).
+    fn close_tab(&mut self, force: bool) -> Result<(), EditorError> {
         if self.tabs.len() <= 1 {
             self.message = Some("E784: Cannot close last tab page".to_string());
             return Ok(());
+        }
+        if !force {
+            let buffers: Vec<usize> = self.tabs[self.active_tab]
+                .windows
+                .iter()
+                .map(|window| window.buffer_id)
+                .collect();
+            if let Some(message) = self.unsaved_buffer_message(&buffers) {
+                self.message = Some(message);
+                return Ok(());
+            }
         }
         self.save_focus_cursor();
         self.tabs.remove(self.active_tab);
@@ -565,6 +599,43 @@ impl Editor {
             (window.buffer_id, window.cursor)
         };
         self.activate_buffer(buffer_id, cursor)
+    }
+
+    /// Returns the refusal message for the first buffer among `ids` that has
+    /// unsaved changes, or `None` when all of them are saved.
+    ///
+    /// The focused buffer reports Vim's `E37`; a background buffer is named in
+    /// `E162` so the user knows which file still needs writing (`BUF-003`).
+    fn unsaved_buffer_message(&self, ids: &[usize]) -> Option<String> {
+        for id in ids {
+            let (modified, name) = if *id == self.active_buffer {
+                (self.document.is_modified(), self.document.display_name())
+            } else if let Some(entry) = self.inactive.iter().find(|entry| entry.id == *id) {
+                (entry.document.is_modified(), entry.document.display_name())
+            } else {
+                continue;
+            };
+            if !modified {
+                continue;
+            }
+            return Some(if *id == self.active_buffer {
+                E37.to_string()
+            } else {
+                format!(
+                    "E162: No write since last change for buffer \"{name}\" (add ! to override)"
+                )
+            });
+        }
+        None
+    }
+
+    /// Returns the refusal message when quitting would discard unsaved text
+    /// from any loaded buffer (`BUF-003`).
+    fn unsaved_changes_message(&self) -> Option<String> {
+        let mut ids = Vec::with_capacity(self.inactive.len() + 1);
+        ids.push(self.active_buffer);
+        ids.extend(self.inactive.iter().map(|entry| entry.id));
+        self.unsaved_buffer_message(&ids)
     }
 
     fn tab_step(&mut self, count: usize, forward: bool) -> Result<(), EditorError> {
@@ -1560,10 +1631,10 @@ impl Editor {
             Action::Quit { write } => {
                 if write {
                     if self.save_reporting() {
-                        self.should_quit = true;
+                        self.request_quit();
                     }
                 } else {
-                    self.request_quit();
+                    self.should_quit = true;
                 }
                 Ok(())
             }
@@ -2224,7 +2295,7 @@ impl Editor {
                     self.save_as_reporting(command_path(argument))
                 };
                 if saved {
-                    self.should_quit = true;
+                    self.request_quit();
                 }
             }
             "q" => {
@@ -2239,7 +2310,7 @@ impl Editor {
             }
             "x" => {
                 if !self.document.is_modified() || self.save_reporting() {
-                    self.should_quit = true;
+                    self.request_quit();
                 }
             }
             "preserve" => match self.document.preserve_swap() {
@@ -2290,7 +2361,7 @@ impl Editor {
             }
             "tabnew" => self.tab_new_command(argument),
             "tabclose" => {
-                if let Err(error) = self.close_tab() {
+                if let Err(error) = self.close_tab(false) {
                     self.message = Some(error.to_string());
                 }
             }
@@ -2411,15 +2482,51 @@ impl Editor {
             return;
         }
         let backup_options = self.document.backup_options().clone();
+        let abandoned = if force && self.document.is_modified() {
+            Some(self.active_buffer)
+        } else {
+            None
+        };
         match Document::open(path) {
             Ok(mut document) => {
                 *document.backup_options_mut() = backup_options;
                 let warning = document_warning(&document);
                 self.open_buffer(document);
+                if let Some(id) = abandoned {
+                    self.reload_abandoned_buffer(id);
+                }
                 self.reset_view_state();
                 self.message = warning;
             }
             Err(error) => self.message = Some(error.to_string()),
+        }
+    }
+
+    /// Restores an abandoned buffer to its on-disk state after `:e!`.
+    ///
+    /// The refused text must not stay in the buffer list marked modified: it
+    /// would report unsaved changes that no longer exist and block quitting
+    /// (`BUF-003`).
+    fn reload_abandoned_buffer(&mut self, id: usize) {
+        let Some(index) = self.inactive.iter().position(|entry| entry.id == id) else {
+            return;
+        };
+        let backup_options = self.inactive[index].document.backup_options().clone();
+        let path = self.inactive[index].document.path().map(Path::to_path_buf);
+        self.inactive[index].document.close_session();
+        let reloaded = match path {
+            Some(path) => Document::open(path),
+            None => Ok(Document::untitled()),
+        };
+        match reloaded {
+            Ok(mut document) => {
+                *document.backup_options_mut() = backup_options;
+                self.inactive[index].document = document;
+            }
+            Err(error) => {
+                self.inactive.remove(index);
+                self.message = Some(error.to_string());
+            }
         }
     }
 
@@ -2476,11 +2583,11 @@ impl Editor {
         self.left_col = 0;
     }
 
+    /// Quits unless a loaded buffer still has unsaved changes (`BUF-003`).
     fn request_quit(&mut self) {
-        if self.document.is_modified() {
-            self.message = Some("E37: No write since last change (add ! to override)".to_string());
-        } else {
-            self.should_quit = true;
+        match self.unsaved_changes_message() {
+            Some(message) => self.message = Some(message),
+            None => self.should_quit = true,
         }
     }
 

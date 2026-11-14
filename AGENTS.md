@@ -556,7 +556,7 @@ Dependencies that are already approved by the specification's architecture ([[PR
 
 
 - You have to create Documentation for anything relevant for Developers and Users
-- All generated documentation must reside in `G:\Obsidian\Vault\Vanta\Documentation`.
+- All generated documentation must reside in this repository's `Documentation/` directory.
 - Use Obsidian-style links: `[[Note Name]]`.
 - Write in concise, professional technical prose using GitHub-Flavored Markdown.
 - Use frontmatter
