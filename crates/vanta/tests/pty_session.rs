@@ -398,6 +398,18 @@ fn wait_for_swap_text(directory: &Path, needle: &str, timeout: Duration) -> bool
     while Instant::now() < deadline {
         if let Ok(entries) = fs::read_dir(directory) {
             for entry in entries.flatten() {
+                // Atomic writes stage the contents in `.` + final name + a
+                // sequence suffix before renaming, so a completed swap is the
+                // only entry that ends in `.swp`. Matching a half-written
+                // temp file here used to return before the rename, which made
+                // the kill-then-recover tests flaky under load.
+                let completed = entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.ends_with(".swp"));
+                if !completed {
+                    continue;
+                }
                 if let Ok(text) = fs::read_to_string(entry.path())
                     && text.contains(needle)
                 {
